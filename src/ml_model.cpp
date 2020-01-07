@@ -50,6 +50,8 @@ void MlModel::initialise(bool _do_sgd)
 	max_radius_mask_bodies.resize(nr_bodies, -1);
 	pdf_class.resize(nr_classes, 1./(RFLOAT)nr_classes);
     pdf_direction.resize(nr_classes * nr_bodies);
+    //MOD:
+    digamma_var.resize(nr_classes * nr_bodies);
     group_names.resize(nr_groups, "");
     sigma2_noise.resize(nr_groups, aux);
     nr_particles_group.resize(nr_groups);
@@ -834,17 +836,72 @@ void MlModel::initialisePdfDirection(int newsize)
 
 	// If the pdf_direction were already filled (size!=0), and newsize=oldsize then leave them as they were
 	// If they were still empty, or if the size changes, then initialise them with an even distribution
+    // Modified: try to interpolate from old distribution
 	for (int iclass = 0; iclass < nr_classes * nr_bodies; iclass++)
 	{
 		long long int oldsize = MULTIDIM_SIZE(pdf_direction[iclass]);
 		if (oldsize == 0 || oldsize != newsize)
 		{
 			pdf_direction[iclass].resize(newsize);
-			pdf_direction[iclass].initConstant(1./((RFLOAT) nr_classes * newsize));
+			pdf_direction[iclass].initConstant(1.e4/((RFLOAT) nr_classes * newsize));
 		}
 	}
 	nr_directions = newsize;
 
+}
+
+void MlModel::initialiseDigammaVar(int newsize, RFLOAT v0, RFLOAT coarse_size)
+{
+    for(int iclass = 0; iclass < nr_classes*nr_bodies; iclass++){
+        //long long int oldsize = MULTIDIM_SIZE(digamma_var[iclass]);
+		//if (oldsize == 0 || oldsize != newsize)
+		{
+			digamma_var[iclass].resize(newsize);
+            RFLOAT min_pdf = 2.e8, max_pdf = 0., avg_pdf = 0.;
+            for(int j = 0; j < newsize; j++){
+                //std::cout << j << " " << DIRECT_MULTIDIM_ELEM(pdf_direction[iclass],j) << std::endl;
+                RFLOAT val = 0.;
+                RFLOAT curr_pdf = DIRECT_MULTIDIM_ELEM(pdf_direction[iclass],j);
+                //DIRECT_MULTIDIM_ELEM(pdf_direction[iclass],j) += 1e-4/newsize*total_pdf[iclass];
+                if(curr_pdf < min_pdf) min_pdf = curr_pdf;
+                if(curr_pdf > max_pdf) max_pdf = curr_pdf;
+                avg_pdf += (curr_pdf - 1./newsize)*(curr_pdf-1./newsize);
+                //for(int k = 0; 2*k < coarse_size*coarse_size; k++){
+                //    if( DIRECT_MULTIDIM_ELEM(pdf_direction[iclass],j) + v0 - k > 100.) {
+                //        val += log((DIRECT_MULTIDIM_ELEM(pdf_direction[iclass],j) + v0 - k)*0.5) + 1./(DIRECT_MULTIDIM_ELEM(pdf_direction[iclass],j) + v0 - k);
+                //    } else {
+                //        val += digammal((DIRECT_MULTIDIM_ELEM(pdf_direction[iclass],j) + v0 - k)*0.5);
+                //    }
+                //}
+                //val -= coarse_size*coarse_size/2.*(log(curr_pdf + 1.) - log(2.));
+                DIRECT_MULTIDIM_ELEM(digamma_var[iclass],j) = 0.5*val ;//- float(coarse_size*coarse_size)/(4.*DIRECT_MULTIDIM_ELEM(pdf_direction[iclass],j)+4.);
+                //std::cout << DIRECT_MULTIDIM_ELEM(digamma_var[iclass],j) << std::endl;
+            }
+            std::cout << min_pdf << " " << max_pdf << " " << sqrt(avg_pdf/newsize) << std::endl;
+        }
+    }
+}
+
+void MlModel::calculateDigammaPDf()
+{
+    for(int iclass = 0; iclass < nr_classes*nr_bodies; iclass++){
+        RFLOAT normdigamma = digammal(total_pdf[iclass]*(1.+1e-6));
+        RFLOAT alpha = 1e-6/MULTIDIM_SIZE(pdf_direction[iclass])*total_pdf[iclass];
+        for(int i = 0; i < MULTIDIM_SIZE(pdf_direction[iclass]); i++){
+            DIRECT_MULTIDIM_ELEM(pdf_direction[iclass], i) = digammal(DIRECT_MULTIDIM_ELEM(pdf_direction[iclass], i) + alpha) - normdigamma;
+        }
+    }
+}
+
+void MlModel::initialiseTotalPdf()
+{
+    total_pdf.resize(nr_classes*nr_bodies);
+    for(int iclass = 0; iclass < nr_classes*nr_bodies; iclass++){
+        total_pdf[iclass] = 0;
+        for(int i = 0; i < MULTIDIM_SIZE(pdf_direction[iclass]); i++){
+            total_pdf[iclass] += DIRECT_MULTIDIM_ELEM(pdf_direction[iclass], i);
+        }
+    }
 }
 
 void MlModel::initialiseBodies(FileName fn_masks, FileName fn_root_out, bool also_initialise_rest, int rank)

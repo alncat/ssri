@@ -493,7 +493,16 @@ void MlOptimiser::parseInitial(int argc, char **argv)
     nr_iter = textToInteger(parser.getOption("--iter", "Maximum number of iterations to perform", "50"));
     mymodel.pixel_size = textToFloat(parser.getOption("--angpix", "Pixel size (in Angstroms)", "-1"));
 	mymodel.tau2_fudge_factor = textToFloat(parser.getOption("--tau2_fudge", "Regularisation parameter (values higher than 1 give more weight to the data)", "1"));
+    mymodel.do_tv = parser.checkOption("--tv", "Using total variation based regularization");
+
+    mymodel.tv_iters = textToInteger(parser.getOption("--tv_iters", "Number of iterations used in graph net based reconstruction", "100"));
+    mymodel.l_r = textToFloat(parser.getOption("--tv_lr", "Learning rate for graph net based reconstrunction", "1"));
+    mymodel.tv_weight = textToFloat(parser.getOption("--tv_weight", "Weight for implicit regularisation parameter", "0.2"));
+    mymodel.tv_alpha = textToFloat(parser.getOption("--tv_alpha", "Regularisation parameter for L1 terms", "0.1"));
+    mymodel.tv_beta = textToFloat(parser.getOption("--tv_beta", "Regularisation parameter for Graph L2 terms", "0.1"));
+
 	mymodel.nr_classes = textToInteger(parser.getOption("--K", "Number of references to be refined", "1"));
+    acceptance_ratio = textToDouble(parser.getOption("--acceptance_ratio", "The acceptance_ratio for sample random sampling", "1."));
     particle_diameter = textToFloat(parser.getOption("--particle_diameter", "Diameter of the circular mask that will be applied to the experimental images (in Angstroms)", "-1"));
 	do_zero_mask = parser.checkOption("--zero_mask","Mask surrounding background in particles to zero (by default the solvent area is filled with random noise)");
 	do_solvent = parser.checkOption("--flatten_solvent", "Perform masking on the references as well?");
@@ -1849,8 +1858,11 @@ void MlOptimiser::initialiseGeneral(int rank)
     	std::cout << " Using bimodal priors on the psi angle..." << std::endl;
 
 	// Resize the pdf_direction arrays to the correct size and fill with an even distribution
-	if (directions_have_changed)
+	if (directions_have_changed) {
 		mymodel.initialisePdfDirection(sampling.NrDirections());
+        //MOD: initialise digamma array during initialisation
+        //mymodel.initialiseDigammaVar(sampling.NrDirections(), coarse_size*coarse_size, coarse_size);
+    }
 
 	// Initialise the wsum_model according to the mymodel
 	wsum_model.initialise(mymodel, sampling.symmetryGroup(), asymmetric_padding, skip_gridding);
@@ -2280,7 +2292,7 @@ void MlOptimiser::setSigmaNoiseEstimatesAndSetAverageImage(MultidimArray<RFLOAT>
 
 			MultidimArray<RFLOAT> dummy;
 			(wsum_model.BPref[iclass]).reconstruct(mymodel.Iref[iclass], gridding_nr_iter, false,
-					1., dummy, dummy, dummy, dummy, dummy);
+					1., dummy, dummy, dummy, dummy, dummy, 1, false);
 			// 2D projection data were CTF-corrected, subtomograms were not
 			refs_are_ctf_corrected = (mymodel.data_dim == 3) ? false : true;
 		}
@@ -2625,6 +2637,11 @@ void MlOptimiser::expectation()
 	// Initialise some stuff
 	// A. Update current size (may have been changed to ori_size in autoAdjustAngularSampling) and resolution pointers
 	updateImageSizeAndResolutionPointers();
+    if(do_auto_refine && iter == 1) {
+        //MOD: calculate total pdf and initialise digamma here at first iteration
+        mymodel.initialiseTotalPdf();
+        mymodel.initialiseDigammaVar(sampling.NrDirections(), float(coarse_size*coarse_size)/2., coarse_size);
+    }
 
 	// B. Initialise Fouriertransform, set weights in wsum_model to zero, initialise AB-matrices for FFT-phase shifts, etc
 	expectationSetup();
@@ -4152,10 +4169,13 @@ void MlOptimiser::maximizationOtherParameters()
 		// Use sampling.NrDirections() to include all directions (also those with zero prior probability for any given image)
 		if (!(do_skip_align || do_skip_rotate || do_sgd))
 		{
+            RFLOAT dirichlet_prior = 0.0000;
 			for (int idir = 0; idir < sampling.NrDirections(); idir++)
 			{
 				mymodel.pdf_direction[iclass](idir) *= mu;
-				mymodel.pdf_direction[iclass](idir) += (1. - mu) * wsum_model.pdf_direction[iclass](idir) / sum_weight;
+				//mymodel.pdf_direction[iclass](idir) += (1. - mu) * (wsum_model.pdf_direction[iclass](idir) + sum_weight/sampling.NrDirections()*dirichlet_prior) / (sum_weight + sum_weight*dirichlet_prior);//wsum_model.pdf_direction[iclass](idir) / sum_weight;
+                //MOD: use total weight without normalization
+                mymodel.pdf_direction[iclass](idir) += (1. - mu) * wsum_model.pdf_direction[iclass](idir)/sum_weight;
 			}
 		}
 	}
@@ -4613,7 +4633,7 @@ void MlOptimiser::updateImageSizeAndResolutionPointers()
 			DIRECT_A3D_ELEM(Mresol_coarse, k, i, j) = ires;
 		}
 	}
-
+    
 //#define DEBUG_MRESOL
 #ifdef DEBUG_MRESOL
 	Image<RFLOAT> img;
@@ -8548,6 +8568,71 @@ void MlOptimiser::calculateExpectedAngularErrors(long int my_first_ori_particle,
 
 }
 
+void MlOptimiser::constructKDTree()
+{
+    //get all rot and tilt angles and convert them to quaternion
+    Matrix1D<RFLOAT> quaterion;
+    std::vector<std::pair<Point<4>, long int> > quats;
+    for(long int i = 0; i < sampling.NrDirections(); i++){
+        //get direction corresponding to i from sampling
+        RFLOAT rot, tilt;
+        sampling.getDirection(i, rot, tilt);
+        Euler_angles2quat(rot, tilt, quaterion);
+        Point<4> q;
+        for(int j = 0; j < 4; j++){
+            q[j] = quaterion(j);
+        }
+        quats.push_back(std::make_pair(q, i));
+    }
+    //construct KDTree from quats
+    dir_kd_tree = std::unique_ptr<KDTree<4, long int> >(new KDTree<4, long int>(quats));
+
+}
+
+void MlOptimiser::upsamplePdfDirection()
+{
+    //save previous pdf direction before proceeding
+    std::vector<MultidimArray<RFLOAT> > o_pdf_direction;
+    for(int i = 0; i < mymodel.pdf_direction.size(); i++){
+        if(sampling.NrDirections() == MULTIDIM_SIZE(mymodel.pdf_direction[i])) return;
+        o_pdf_direction.push_back(mymodel.pdf_direction[i]);
+        //resize pdf direction
+        mymodel.pdf_direction[i].resize(sampling.NrDirections());
+    }
+    for(long int i = 0; i < sampling.NrDirections(); i++){
+        RFLOAT rot, tilt;
+        sampling.getDirection(i, rot, tilt);
+        Matrix1D<RFLOAT> quaterion;
+        Euler_angles2quat(rot, tilt, quaterion);
+        //find n closest quaterions for interpolating direction pdf
+        //lookup kd tree
+        std::vector<std::pair<Point<4>, long int> > neighbors;
+        Point<4> key;
+        for(int j = 0; j < 4; j++)
+            key[j] = quaterion(j);
+        dir_kd_tree->kNN(key, 3, neighbors);
+        for(int j = 0; j < 4; j++)
+            key[j] = -quaterion(j);
+        dir_kd_tree->kNN(key, 3, neighbors);
+        //now interpolate the value of this direction
+        std::vector<RFLOAT> val(o_pdf_direction.size(), 0);
+        RFLOAT weight_sum = 0.;
+        for(int j = 0; j < neighbors.size(); j++){
+            //index
+            RFLOAT dist = 0.;
+            for(int k = 0; k < 4; k++) dist += (key[k]*neighbors[j].first[k]);
+            dist = dist >= 0. ? dist : -dist;
+            dist = 2. - 2.*dist;
+            for(int iclass = 0; iclass < o_pdf_direction.size(); iclass++)
+                val[iclass] += DIRECT_MULTIDIM_ELEM(o_pdf_direction[iclass], neighbors[j].second)*exp(-dist*2);
+            weight_sum += exp(-dist*2);
+        }
+        for(int iclass = 0; iclass < o_pdf_direction.size(); iclass++)
+            DIRECT_MULTIDIM_ELEM(mymodel.pdf_direction[iclass], i) = val[iclass] /weight_sum;
+    }
+    mymodel.nr_directions = sampling.NrDirections();
+}
+
 void MlOptimiser::updateAngularSampling(bool myverb)
 {
 
@@ -8683,6 +8768,12 @@ void MlOptimiser::updateAngularSampling(bool myverb)
 			{
 				// don't change angular sampling, as it is already fine enough
 				has_fine_enough_angular_sampling = true;
+                //MOD: if the sampling rate didn't change
+                //calculate the sum of pdf for each class
+                mymodel.initialiseTotalPdf();
+                //initialise the digamma
+                mymodel.initialiseDigammaVar(sampling.NrDirections(), float(mymodel.current_size*mymodel.current_size)/2., mymodel.current_size);
+                //mymodel.calculateDigammaPDf();
 			}
 			else
 			{
@@ -8738,11 +8829,24 @@ void MlOptimiser::updateAngularSampling(bool myverb)
 					new_hp_order = sampling.healpix_order + 1;
 					new_rottilt_step = new_psi_step = 360. / (6 * ROUND(std::pow(2., new_hp_order + adaptive_oversampling)));
 
+                    //MOD: before setting the new orientation, construct a kd tree
+                    constructKDTree();
+
 					// Set the new sampling in the sampling-object
 					sampling.setOrientations(new_hp_order, new_psi_step * std::pow(2., adaptive_oversampling));
 
 					// Resize the pdf_direction arrays to the correct size and fill with an even distribution
-					mymodel.initialisePdfDirection(sampling.NrDirections());
+                    //MOD: After changing the sampling rate, upsample the pdf direction
+                    std::cout << "KDTree constructed" << std::endl;
+                    upsamplePdfDirection();
+                    //calculate the sum of pdf for each class
+                    mymodel.initialiseTotalPdf();
+                    //initialise the digamma
+                    std::cout << "PDF direction upsampled " << sampling.NrDirections() << " " << coarse_size << " " << mymodel.current_size << std::endl;
+                    mymodel.initialiseDigammaVar(sampling.NrDirections(), float(mymodel.current_size*mymodel.current_size)/2., mymodel.current_size);
+                    //mymodel.calculateDigammaPDf();
+                    std::cout << "finished prior factor estimation" << std::endl;
+					//mymodel.initialisePdfDirection(sampling.NrDirections());
 
 					// Also reset the nr_directions in wsum_model
 					wsum_model.nr_directions = mymodel.nr_directions;
@@ -8793,7 +8897,17 @@ void MlOptimiser::updateAngularSampling(bool myverb)
 						mymodel.sigma2_rot = getHelicalSigma2Rot((helical_rise_initial / mymodel.pixel_size), helical_twist_initial, sampling.helical_offset_step, new_rottilt_step, mymodel.sigma2_rot);
 				}
 			}
-		}
+		} else {
+            if(mymodel.ref_dim == 3) {
+                mymodel.initialiseTotalPdf();
+                //initialise the digamma
+                std::cout << "PDF direction sampling " << sampling.NrDirections() << " " << coarse_size << " " << mymodel.current_size << std::endl;
+                mymodel.initialiseDigammaVar(sampling.NrDirections(), float(mymodel.current_size*mymodel.current_size)/2., mymodel.current_size);
+                //mymodel.calculateDigammaPDf();
+                std::cout << "finished prior factor estimation" << std::endl;
+                //mymodel.initialisePdfDirection(sampling.NrDirections());
+            }
+        }
 
 		// Print to screen
 		if (myverb)

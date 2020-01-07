@@ -36,7 +36,7 @@ __global__ void cuda_kernel_weights_exponent_coarse(
 
 		T diff2 = g_weights[idx];
 		if( diff2 < g_min_diff2 || g_pdf_orientation_zeros[iorient] || g_pdf_offset_zeros[itrans])
-			g_weights[idx] = -99e99; //large negative number
+			g_weights[idx] = -3e38; //large negative number
 		else
 			g_weights[idx] = g_pdf_orientation[iorient] + g_pdf_offset[itrans] + g_min_diff2 - diff2;
 	}
@@ -462,6 +462,32 @@ __global__ void cuda_kernel_multi( T *A,
 		OUT[pixel] = A[pixel]*S;
 }
 
+__global__ void cuda_kernel_substract(XFLOAT *A,
+                                      XFLOAT *B,
+                                      XFLOAT *C,
+                                      XFLOAT l,
+                                      int image_size);
+
+__global__ void cuda_kernel_substract(XFLOAT *A,
+                                     XFLOAT *B,
+                                     XFLOAT *C,
+                                     XFLOAT l,
+                                     int Z,
+                                     int Y,
+                                     int X,
+                                     int image_size);
+
+__global__ void cuda_kernel_substract(XFLOAT *A,
+                                     XFLOAT *B,
+                                     XFLOAT *C,
+                                     XFLOAT *vol_out,
+                                     XFLOAT l,
+                                     XFLOAT* sum,
+                                     int Z,
+                                     int Y,
+                                     int X,
+                                     int image_size);
+
 namespace CudaKernels
 {
 /*
@@ -469,6 +495,8 @@ namespace CudaKernels
  *
  *  A[i] = A[i]*S
  */
+
+
 template <typename T>
 __global__ void cuda_kernel_multi(
 		T *A,
@@ -499,10 +527,78 @@ __global__ void cuda_kernel_multi( T *A,
 		OUT[pixel] = A[pixel]*B[pixel]*S;
 }
 
+__global__ void cuda_kernel_complex_multi( XFLOAT *A,
+								   XFLOAT *B,
+								   XFLOAT S,
+		  	  	  	  	  	  	   int image_size);
+
+__global__ void cuda_kernel_complex_multi( XFLOAT *A,
+                                   XFLOAT *B,
+                                   XFLOAT S,
+                                   XFLOAT w,
+                                   int Z,
+                                   int Y,
+                                   int X,
+                                   int ZZ,
+                                   int YY,
+                                   int XX,
+                                   int image_size);
+
 __global__ void cuda_kernel_finalizeMstddev( XFLOAT *Mstddev,
 											 XFLOAT *aux,
 											 XFLOAT S,
 											 int image_size);
+
+__global__ void cuda_kernel_soft_threshold(XFLOAT *img,
+                                           XFLOAT *grads,
+                                           XFLOAT l_r,
+                                           XFLOAT alpha,
+                                           XFLOAT eps,
+                                           int image_size);
+
+__global__ void cuda_kernel_soft_threshold(XFLOAT *img,
+                                           XFLOAT *grads,
+                                           XFLOAT l_r,
+                                           XFLOAT alpha,
+                                           XFLOAT eps,
+                                           int X,
+                                           int Y,
+                                           int Z,
+                                           int XX,
+                                           int YY,
+                                           int ZZ,
+                                           int image_size);
+
+__global__ void cuda_kernel_graph_grad(XFLOAT *img,
+                                       XFLOAT *grads,
+                                       int Z,
+                                       int Y,
+                                       int X,
+                                       XFLOAT beta,
+                                       XFLOAT epslog,
+                                       XFLOAT eps,
+                                       int image_size);
+
+__global__ void cuda_kernel_graph_grad(XFLOAT *img,
+                                       XFLOAT *grads,
+                                       int Z,
+                                       int Y,
+                                       int X,
+                                       int ZZ,
+                                       int YY,
+                                       int XX,
+                                       XFLOAT beta,
+                                       XFLOAT epslog,
+                                       XFLOAT eps,
+                                       int image_size);
+
+__global__ void cuda_kernel_graph_grad(XFLOAT *img,
+                                       XFLOAT *grads,
+                                       int Y,
+                                       int X,
+                                       XFLOAT beta,
+                                       XFLOAT eps,
+                                       int image_size);
 
 /*
  * In place squares array in place

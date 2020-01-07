@@ -230,6 +230,14 @@ public:
             Transform(FFTW_BACKWARD);
         }
 
+    template <typename T, typename T1>
+        void inverseFourierTransform(T& V, T1& v, int nr_threads)
+        {
+            setReal(v, nr_threads);
+            setFourier(V);
+            Transform(FFTW_BACKWARD);
+        }
+
     /** Get Fourier coefficients. */
     template <typename T>
         void getFourierAlias(T& V) {V.alias(fFourier); return;}
@@ -341,6 +349,8 @@ public:
     */
     void cleanup();
 
+    void cleanup_threads();
+
     /** Destroy both forward and backward fftw planes (mutex locked */
     void destroyPlans();
 
@@ -362,6 +372,8 @@ public:
         the result will be stored in img. This means that the size
         of img cannot change between calls. */
     void setReal(MultidimArray<RFLOAT> &img);
+
+    void setReal(MultidimArray<RFLOAT> &img, int nr_threads);
 
     /** Set a Multidimarray for input.
         The data of img will be the one of fComplex. In forward

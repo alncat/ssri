@@ -222,7 +222,7 @@ void BFactorEstimator::process(const std::vector<MetaDataTable>& mdts)
 			
 				MultidimArray<RFLOAT> dummy;
 				Image<RFLOAT> vol;
-				backprojectors[2*f + h].reconstruct(vol(), 10, false, 1., dummy, dummy, dummy, dummy, dummy);
+				backprojectors[2*f + h].reconstruct(vol(), 10, false, 1., dummy, dummy, dummy, dummy, dummy, 1., false);
 			
 				std::string fnOut = outPath + "frame_" + integerToString(ff+1, 3, '0')
 					+ "_half_" + integerToString(h+1) + ".mrc";

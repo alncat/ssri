@@ -1535,19 +1535,31 @@ void convertAllSquaredDifferencesToWeights(unsigned exp_ipass,
 	CUSTOM_ALLOCATOR_REGION_NAME("CASDTW_PDF");
 
 	// pdf_orientation is ipart-independent, so we keep it above ipart scope
+    // consider using variational bayesian method to compute weight
 	CTIC(accMLO->timer,"get_orient_priors");
-	for (unsigned long exp_iclass = sp.iclass_min; exp_iclass <= sp.iclass_max; exp_iclass++)
+	for (unsigned long exp_iclass = sp.iclass_min; exp_iclass <= sp.iclass_max; exp_iclass++) {
+        //RFLOAT normdigamma = digammal(baseMLO->mymodel.total_pdf[exp_iclass]*(1.+1e-4));
+        RFLOAT alpha = 1e-4/baseMLO->sampling.NrDirections()*baseMLO->mymodel.total_pdf[exp_iclass];
 		for (unsigned long idir = sp.idir_min, iorientclass = (exp_iclass-sp.iclass_min) * sp.nr_dir * sp.nr_psi; idir <=sp.idir_max; idir++)
 			for (unsigned long ipsi = sp.ipsi_min; ipsi <= sp.ipsi_max; ipsi++, iorientclass++)
 			{
-				RFLOAT pdf(0);
+				RFLOAT pdf(1.);
+                RFLOAT logvar(0.);
 
-				if (baseMLO->do_skip_align || baseMLO->do_skip_rotate)
+				if (baseMLO->do_skip_align || baseMLO->do_skip_rotate) {
 					pdf = baseMLO->mymodel.pdf_class[exp_iclass];
-				else if (baseMLO->mymodel.orientational_prior_mode == NOPRIOR)
-					pdf = DIRECT_MULTIDIM_ELEM(baseMLO->mymodel.pdf_direction[exp_iclass], idir);
-				else
+                }
+				else if (baseMLO->mymodel.orientational_prior_mode == NOPRIOR) {
+					pdf = DIRECT_MULTIDIM_ELEM(baseMLO->mymodel.pdf_direction[exp_iclass], idir) + alpha;
+                    logvar = DIRECT_MULTIDIM_ELEM(baseMLO->mymodel.digamma_var[exp_iclass], idir);
+                }
+				else{
 					pdf = op.directions_prior[idir] * op.psi_prior[ipsi];
+                    //pdf = DIRECT_MULTIDIM_ELEM(baseMLO->mymodel.pdf_direction[exp_iclass], op.pointer_dir_nonzeroprior[idir])*op.psi_prior[ipsi];
+                    logvar = DIRECT_MULTIDIM_ELEM(baseMLO->mymodel.digamma_var[exp_iclass], op.pointer_dir_nonzeroprior[idir]);
+                }
+                //MOD: check how to convert idir, ipsi to index in pdf direction
+                //use op.pointer_dir_nonzeroprior[idir] to get global direction pdf
 
 				if (pdf == 0)
 				{
@@ -1556,10 +1568,16 @@ void convertAllSquaredDifferencesToWeights(unsigned exp_ipass,
 				}
 				else
 				{
+                    //MOD: also considering the factor of variance of each group
 					pdf_orientation[iorientclass] = log(pdf);
-					pdf_orientation_zeros[iorientclass] = false;
+                    //add alpha to pdf
+                    //pdf += alpha;
+                    //substract normalization factor to keep value small
+                    //pdf_orientation[iorientclass] = digammal(pdf) + logvar - normdigamma;
+			        pdf_orientation_zeros[iorientclass] = false;
 				}
 			}
+    }
 
 	pdf_orientation_zeros.cpToDevice();
 	pdf_orientation.cpToDevice();

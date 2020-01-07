@@ -39,6 +39,8 @@ public:
 	int rank_shared_count;
 
 	bool haveWarnedRefinementMem;
+    
+    cudaStream_t stream = NULL;
 
 	MlDeviceBundle(MlOptimiser *baseMLOptimiser):
 			baseMLO(baseMLOptimiser),
@@ -53,6 +55,16 @@ public:
 	{
 		device_id = did;
 	}
+
+    void setStream()
+    {
+        HANDLE_ERROR(cudaStreamCreate(&stream));
+    }
+
+    void destroyStream()
+    {
+        HANDLE_ERROR(cudaStreamDestroy(stream));
+    }
 
 	size_t checkFixedSizedObjects(int shares);
 	void setupFixedSizedObjects();

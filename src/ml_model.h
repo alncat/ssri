@@ -64,6 +64,15 @@ public:
 	// Perform SGD instead of expectation maximization?
 	bool do_sgd;
 
+    // Perform graph based regularization
+    bool do_tv;
+
+    // learning rate graph restraint scale
+    RFLOAT l_r, tv_alpha, tv_beta, tv_weight;
+
+    // number of tv iterations
+    int tv_iters;
+
 	// Number of particles in each group
 	std::vector<long int> nr_particles_group;
 
@@ -148,6 +157,12 @@ public:
 
 	// One array for each class
 	std::vector<MultidimArray<RFLOAT> > pdf_direction;
+
+    //MOD: one array for the total count of pdf for each class
+    std::vector<RFLOAT> total_pdf;
+
+    //MOD: one array for the factor of variance
+    std::vector<MultidimArray<RFLOAT> > digamma_var;
 
 	// Priors for offsets for each class (only in 2D)
 	std::vector<Matrix1D<RFLOAT> > prior_offset_class;
@@ -367,6 +382,8 @@ public:
 		prior_offset_class.clear();
 		pdf_class.clear();
 		pdf_direction.clear();
+        //MOD:
+        digamma_var.clear();
 		nr_particles_group.clear();
 		ref_dim = data_dim = ori_size = nr_classes = nr_bodies = nr_groups = nr_directions = interpolator = r_min_nn;
 		padding_factor = 0.;
@@ -415,7 +432,9 @@ public:
 	* because one cannot use an old pdf_orient with size unequal to the new one
 	*/
 	void initialisePdfDirection(int newsize);
-
+    void initialiseDigammaVar(int newsize, RFLOAT v0, RFLOAT coarse_size);
+    void initialiseTotalPdf();
+    void calculateDigammaPDf();
 	/** Read in the binary masks provided by the user and then make a soft edge on those */
 	void initialiseBodies(FileName fn_masks, FileName fn_root_out, bool also_initialise_rest = false, int rank = 0);
 

@@ -12,10 +12,95 @@
 #if(defined(CubLog) && defined(__CUDA_ARCH__) && (__CUDA_ARCH__<= 520)) // Intetionally force a warning for new arch
 	#undef CubLog
 #endif
+#include "src/acc/cuda/cub/block/block_reduce.cuh"
+//#include "src/gpu_utils/cub/block/block_histogram.cuh"
+//#include "src/gpu_utils/cub/block/block_discontinuity.cuh"
+//#include "src/gpu_utils/cub/block/block_exchange.cuh"
+#include "src/acc/cuda/cub/block/block_load.cuh"
+//#include "src/gpu_utils/cub/block/block_radix_rank.cuh"
+//#include "src/gpu_utils/cub/block/block_radix_sort.cuh"
+//#include "src/gpu_utils/cub/block/block_scan.cuh"
+#include "src/acc/cuda/cub/block/block_store.cuh"
+
 #include "src/acc/cuda/cub/device/device_radix_sort.cuh"
 #include "src/acc/cuda/cub/device/device_reduce.cuh"
 #include "src/acc/cuda/cub/device/device_scan.cuh"
 #include "src/acc/cuda/cub/device/device_select.cuh"
+
+template<typename T>
+struct Square
+{
+    __host__ __device__ __forceinline__
+    T operator()(const T& a) const {
+        return a*a;
+    }
+};
+//using namespace cub;
+
+template <
+    typename                T,
+    int                     BLOCK_THREADS,
+    int                     ITEMS_PER_THREAD,
+    cub::BlockLoadAlgorithm     LALGORITHM,
+    cub::BlockReduceAlgorithm    ALGORITHM>
+__global__ void BlockSumKernel(
+    T         *d_in,          // Tile of input
+    T         *d_out,
+    int       in_size)         // Tile aggregate
+{
+    // Specialize BlockReduce type for our thread block
+    typedef cub::BlockLoad<T, BLOCK_THREADS, ITEMS_PER_THREAD, LALGORITHM> BlockLoadT;
+    typedef cub::BlockReduce<T, BLOCK_THREADS, ALGORITHM> BlockReduceT;
+    // Shared memory
+    __shared__ union {
+        typename BlockLoadT::TempStorage load;
+        typename BlockReduceT::TempStorage reduce;
+    } temp_storage;
+    // Per-thread tile data
+    T data[ITEMS_PER_THREAD];
+    //cub::LoadDirectBlockedVectorized(threadIdx.x,
+    //        d_in+blockIdx.x*BLOCK_THREADS*ITEMS_PER_THREAD, 
+    //        data);
+    int offset = blockIdx.x*BLOCK_THREADS*ITEMS_PER_THREAD;
+    int valid_items = min(BLOCK_THREADS*ITEMS_PER_THREAD, in_size - offset);
+    BlockLoadT(temp_storage.load).Load(d_in+offset, data, valid_items, T());
+
+    for(int item=0; item<ITEMS_PER_THREAD; ++item)
+        data[item] *= data[item];
+    // Compute sum
+    T aggregate = BlockReduceT(temp_storage.reduce).Sum(data);
+    // Store aggregate and elapsed clocks
+    if (threadIdx.x == 0)
+    {
+        //if(blockIdx.x % 1000000 == 0)
+        //    printf("%f\n", aggregate);
+        atomicAdd(d_out, aggregate);
+    }
+}
+
+template <typename T>
+static T getSquareSumOnBlock(CudaUnifedPtr<T> &ptr)
+{
+#ifdef DEBUG_CUDA
+if (ptr.size == 0)
+	printf("DEBUG_ERROR: getSquareSumOnDevice called with pointer of zero size.\n");
+if (ptr.d_ptr == NULL)
+	printf("DEBUG_ERROR: getSquareSumOnDevice called with null device pointer.\n");
+if (ptr.getAllocator() == NULL && CustomAlloc)
+	printf("DEBUG_ERROR: getSquareSumOnDevice called with null allocator.\n");
+#endif
+	CudaUnifedPtr<T>  val(ptr.getStream(), ptr.gpu_id, 1);
+	val.alloc();
+
+    val[0] = 0;
+	int sumSize = (int) ceilf(((XFLOAT) ptr.getSize())/((XFLOAT)(512*4)));
+    BlockSumKernel<T, 512, 4, cub::BLOCK_LOAD_VECTORIZE, cub::BLOCK_REDUCE_RAKING><<<sumSize, 512, 0, ptr.getStream()>>>(~ptr, ~val, ptr.getSize());
+	ptr.streamSync();
+    //cudaDeviceSynchronize();
+
+	return val[0];
+}
+
 
 namespace CudaKernels
 {

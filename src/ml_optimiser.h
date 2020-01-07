@@ -33,6 +33,7 @@
 #include <sstream>
 #include <vector>
 #include <iterator>
+#include <memory>
 #include "src/ml_model.h"
 #include "src/parallel.h"
 #include "src/exp_model.h"
@@ -40,6 +41,8 @@
 #include "src/time.h"
 #include "src/mask.h"
 #include "src/healpix_sampling.h"
+#include "src/Point.h"
+#include "src/KDTree.h"
 #include "src/helix.h"
 #include "src/local_symmetry.h"
 #include "src/acc/settings.h"
@@ -108,6 +111,7 @@ public:
 	std::vector<int> cudaOptimiserDeviceMap;
 	std::vector<void*> cudaOptimisers;
 	std::vector<void*> accDataBundles;
+    RFLOAT acceptance_ratio;
 
 #ifdef ALTCPU
 	std::vector<void*> cpuOptimisers;
@@ -136,6 +140,9 @@ public:
 
 	// HEALPix sampling object for coarse sampling
 	HealpixSampling sampling;
+
+    // KD Tree for searching in directions
+    std::unique_ptr<KDTree<4, long int> > dir_kd_tree;
 
 	// Filename for the experimental images
 	FileName fn_data;
@@ -1015,6 +1022,13 @@ public:
 
 	// Adjust angular sampling based on the expected angular accuracies for auto-refine procedure
 	void updateAngularSampling(bool verb = true);
+
+
+    //MOD: construct a kd tree for current orientations to be sampled
+    void constructKDTree();
+
+    //MOD: upsample the pdf direction when the sampling order is updated
+    void upsamplePdfDirection();
 
 	// Adjust subset size in fast_subsets or SGD algorithms
 	void updateSubsetSize(bool verb = true);

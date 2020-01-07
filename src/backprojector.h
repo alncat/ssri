@@ -38,9 +38,9 @@ class BackProjector: public Projector
 public:
 	// For backward projection: sum of weights
 	MultidimArray<RFLOAT> weight;
-
-	// Tabulated blob values
-	TabFtBlob tab_ftblob;
+//store test data
+    MultidimArray<RFLOAT> test_weight;	// Tabulated blob values
+    MultidimArray<Complex> test_data; 	TabFtBlob tab_ftblob;
 
 	// Symmetry object
     SymList SL;
@@ -253,13 +253,14 @@ public:
 	 */
 	void getLowResDataAndWeight(MultidimArray<Complex > &lowres_data, MultidimArray<RFLOAT> &lowres_weight,
 			int lowres_r_max);
-
+    void getTestDataAndWeight(MultidimArray<Complex > &lowres_data, MultidimArray<RFLOAT> &lowres_weight);
 	/*
 	 * Set only the lowest resolution components from the data and weight array
 	 * (to be joined together for two independent halves in order to force convergence in the same orientation)
 	 */
 	void setLowResDataAndWeight(MultidimArray<Complex > &lowres_data, MultidimArray<RFLOAT> &lowres_weight,
 			int lowres_r_max);
+    void setTestDataAndWeight(MultidimArray<Complex > &lowres_data, MultidimArray<RFLOAT> &lowres_weight);
 
 	/*
 	 *  Get complex array at the original size as the straightforward average
@@ -296,6 +297,28 @@ public:
                      bool printTimes= false,
 					 bool do_fsc0999 = false);
 
+    void reconstruct(MultidimArray<RFLOAT> &vol_out,
+                     int max_iter_preweight,
+                     bool do_map,
+                     RFLOAT tau2_fudge,
+                     MultidimArray<RFLOAT> &tau2,
+                     MultidimArray<RFLOAT> &sigma2,
+                     MultidimArray<RFLOAT> &evidence_vs_prior,
+                     MultidimArray<RFLOAT> &fourier_coverage,
+                     MultidimArray<RFLOAT> fsc,
+                     RFLOAT normalise = 1.,
+                     int tv_iters = 20,
+                     bool update_tau2_with_fsc = false,
+                     bool is_whole_instead_of_half = false,
+                     int nr_threads = 1,
+                     int minres_map = -1,
+                     bool printTimes= false,
+                     bool do_tv = false,
+                     RFLOAT l_r = 0.01,
+                     RFLOAT tv_alpha = 1,
+                     RFLOAT tv_beta = 1,
+                     RFLOAT tv_weight = 1,
+                     void* devBundle = NULL);
 
 	/*  Enforce Hermitian symmetry, apply helical symmetry as well as point-group symmetry
 	 */

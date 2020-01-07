@@ -775,6 +775,12 @@ void MlOptimiserMpi::expectation()
 	// A. Update current size (may have been changed to ori_size in autoAdjustAngularSampling) and resolution pointers
 	updateImageSizeAndResolutionPointers();
 
+    if(!node->isMaster() && do_auto_refine && iter == 1) {
+        //MOD: calculate total pdf and initialise digamma here at first iteration
+        mymodel.initialiseTotalPdf();
+        mymodel.initialiseDigammaVar(sampling.NrDirections(), coarse_size*coarse_size, coarse_size);
+        //mymodel.calculateDigammaPDf();
+    }
 	// B. Set the PPref Fourier transforms, initialise wsum_model, etc.
 	// The master only holds metadata, it does not set up the wsum_model (to save memory)
 #ifdef TIMING
@@ -2035,6 +2041,22 @@ void MlOptimiserMpi::maximization()
 	helical_rise_half1 = helical_rise_half2 = helical_rise_initial;
 
 	// First reconstruct all classes in parallel
+    void* devBundle = NULL;
+    if(do_gpu && cudaDevices.size() && !node->isMaster()){
+        //int dev = node->rank % cudaDevices.size();
+        int dev = 0;
+        std::cout << node->rank << " assigned to device " << cudaDevices[dev] << " and " << do_parallel_disc_io << " " << do_sequential_halves_recons << std::endl;
+        MlDeviceBundle * b = new MlDeviceBundle(this);
+        b->setDevice(cudaDevices[dev]);
+        //b->setStream();
+        devBundle = (void *) b;
+    }
+
+    if (do_auto_refine && has_converged) {
+        mymodel.tv_iters *= 2;
+        mymodel.tv_alpha *= 0.9;
+        mymodel.tv_beta *= 0.9;
+    }
 	for (int ibody = 0; ibody < mymodel.nr_bodies; ibody++)
 	{
 
@@ -2068,17 +2090,29 @@ void MlOptimiserMpi::maximization()
 							Iref_old = mymodel.Iref[ith_recons];
 
 #ifdef TIMING
-						(wsum_model.BPref[ith_recons]).reconstruct(mymodel.Iref[ith_recons], gridding_nr_iter, do_map,
+                        wsum_model.BPref[ith_recons].reconstruct(mymodel.Iref[ith_recons], gridding_nr_iter, do_map,
 								mymodel.tau2_fudge_factor, mymodel.tau2_class[ith_recons], mymodel.sigma2_class[ith_recons],
 								mymodel.data_vs_prior_class[ith_recons], mymodel.fourier_coverage_class[ith_recons],
-								mymodel.fsc_halves_class[ibody], wsum_model.pdf_class[iclass],
-								do_split_random_halves, (do_join_random_halves || do_always_join_random_halves), nr_threads, minres_map, &timer, do_fsc0999);
+								mymodel.fsc_halves_class[ibody], wsum_model.pdf_class[iclass], mymodel.tv_iters, 
+								do_split_random_halves, (do_join_random_halves || do_always_join_random_halves), nr_threads, minres_map, &timer, mymodel.do_tv, mymodel.l_r, mymodel.tv_alpha, mymodel.tv_beta, mymodel.tv_weight, devBundle);
+
+						//(wsum_model.BPref[ith_recons]).reconstruct(mymodel.Iref[ith_recons], gridding_nr_iter, do_map,
+						//		mymodel.tau2_fudge_factor, mymodel.tau2_class[ith_recons], mymodel.sigma2_class[ith_recons],
+						//		mymodel.data_vs_prior_class[ith_recons], mymodel.fourier_coverage_class[ith_recons],
+						//		mymodel.fsc_halves_class[ibody], wsum_model.pdf_class[iclass],
+						//		do_split_random_halves, (do_join_random_halves || do_always_join_random_halves), nr_threads, minres_map, &timer, do_fsc0999);
 #else
-						(wsum_model.BPref[ith_recons]).reconstruct(mymodel.Iref[ith_recons], gridding_nr_iter, do_map,
+                        wsum_model.BPref[ith_recons].reconstruct(mymodel.Iref[ith_recons], gridding_nr_iter, do_map,
 								mymodel.tau2_fudge_factor, mymodel.tau2_class[ith_recons], mymodel.sigma2_class[ith_recons],
 								mymodel.data_vs_prior_class[ith_recons], mymodel.fourier_coverage_class[ith_recons],
-								mymodel.fsc_halves_class[ibody], wsum_model.pdf_class[iclass],
-								do_split_random_halves, (do_join_random_halves || do_always_join_random_halves), nr_threads, minres_map, false, do_fsc0999);
+								mymodel.fsc_halves_class[ibody], wsum_model.pdf_class[iclass], mymodel.tv_iters, 
+								do_split_random_halves, (do_join_random_halves || do_always_join_random_halves), nr_threads, minres_map, false, mymodel.do_tv, mymodel.l_r, mymodel.tv_alpha, mymodel.tv_beta, mymodel.tv_weight, devBundle);
+
+						//(wsum_model.BPref[ith_recons]).reconstruct(mymodel.Iref[ith_recons], gridding_nr_iter, do_map,
+						//		mymodel.tau2_fudge_factor, mymodel.tau2_class[ith_recons], mymodel.sigma2_class[ith_recons],
+						//		mymodel.data_vs_prior_class[ith_recons], mymodel.fourier_coverage_class[ith_recons],
+						//		mymodel.fsc_halves_class[ibody], wsum_model.pdf_class[iclass],
+						//		do_split_random_halves, (do_join_random_halves || do_always_join_random_halves), nr_threads, minres_map, false, do_fsc0999);
 #endif
 						if(do_sgd)
 						{
@@ -2179,11 +2213,17 @@ void MlOptimiserMpi::maximization()
 							if(do_sgd)
 								Iref_old = mymodel.Iref[ith_recons];
 
-							(wsum_model.BPref[ith_recons]).reconstruct(mymodel.Iref[ith_recons], gridding_nr_iter, do_map,
+							//(wsum_model.BPref[ith_recons]).reconstruct(mymodel.Iref[ith_recons], gridding_nr_iter, do_map,
+							//		mymodel.tau2_fudge_factor, mymodel.tau2_class[ith_recons], mymodel.sigma2_class[ith_recons],
+							//		mymodel.data_vs_prior_class[ith_recons], mymodel.fourier_coverage_class[ith_recons],
+							//		mymodel.fsc_halves_class[ibody], wsum_model.pdf_class[iclass],
+							//		do_split_random_halves, (do_join_random_halves || do_always_join_random_halves), nr_threads, minres_map, false, do_fsc0999);
+                            wsum_model.BPref[ith_recons].reconstruct(mymodel.Iref[ith_recons], gridding_nr_iter, do_map,
 									mymodel.tau2_fudge_factor, mymodel.tau2_class[ith_recons], mymodel.sigma2_class[ith_recons],
 									mymodel.data_vs_prior_class[ith_recons], mymodel.fourier_coverage_class[ith_recons],
-									mymodel.fsc_halves_class[ibody], wsum_model.pdf_class[iclass],
-									do_split_random_halves, (do_join_random_halves || do_always_join_random_halves), nr_threads, minres_map, false, do_fsc0999);
+									mymodel.fsc_halves_class[ibody], wsum_model.pdf_class[iclass], mymodel.tv_iters, 
+									do_split_random_halves, do_join_random_halves, nr_threads, minres_map, false, mymodel.do_tv, mymodel.l_r, mymodel.tv_alpha, mymodel.tv_beta, mymodel.tv_weight, devBundle);
+
 
 							if (do_sgd)
 							{
@@ -2575,6 +2615,74 @@ void MlOptimiserMpi::joinTwoHalvesAtLowResolution()
 
 #ifdef DEBUG
 	std::cerr << "MlOptimiserMpi::joinTwoHalvesAtLowResolution: done" << std::endl;
+#endif
+
+}
+
+void MlOptimiserMpi::exchangeTwoHalves()
+{
+#ifdef DEBUG
+	std::cerr << "MlOptimiserMpi::exchangeTwoHalves: Entering " << std::endl;
+#endif
+
+	if (!do_split_random_halves)
+		REPORT_ERROR("BUG: you should not be in MlOptimiserMpi::exchangeTwoHalves!");
+
+	// Loop over all classes (this will be just one class for now...)
+	RFLOAT myres = XMIPP_MAX(low_resol_join_halves, 1./mymodel.current_resolution);
+	int lowres_r_max = CEIL(mymodel.ori_size * mymodel.pixel_size / myres);
+
+	for (int iclass = 0; iclass < mymodel.nr_classes; iclass++ )
+	{
+		if (node->rank == 1 || node->rank == 2)
+		{
+			MultidimArray<Complex > lowres_data;
+			MultidimArray<RFLOAT > lowres_weight;
+
+            wsum_model.BPref[iclass].getTestDataAndWeight(lowres_data, lowres_weight);
+			if (node->rank == 2)
+			{
+				MPI_Status status;
+
+				// The second slave sends its lowres_data and lowres_weight to the first slave
+				node->relion_MPI_Send(MULTIDIM_ARRAY(lowres_data), 2*MULTIDIM_SIZE(lowres_data), MY_MPI_DOUBLE, 1, MPITAG_IMAGE, MPI_COMM_WORLD);
+				node->relion_MPI_Send(MULTIDIM_ARRAY(lowres_weight), MULTIDIM_SIZE(lowres_weight), MY_MPI_DOUBLE, 1, MPITAG_RFLOAT, MPI_COMM_WORLD);
+
+				// Now the first slave is calculating the average....
+
+				// Then the second slave receives the average back from the first slave
+				node->relion_MPI_Recv(MULTIDIM_ARRAY(lowres_data), 2*MULTIDIM_SIZE(lowres_data), MY_MPI_DOUBLE, 1, MPITAG_IMAGE, MPI_COMM_WORLD, status);
+				node->relion_MPI_Recv(MULTIDIM_ARRAY(lowres_weight), MULTIDIM_SIZE(lowres_weight), MY_MPI_DOUBLE, 1, MPITAG_RFLOAT, MPI_COMM_WORLD, status);
+			
+                // Now node 2 have the test data from node 1, set them back into the backprojector
+			    wsum_model.BPref[iclass].setTestDataAndWeight(lowres_data, lowres_weight);
+
+			}
+			else if (node->rank == 1)
+			{
+
+				std::cout << " Exchange test data and weight ..." << std::endl;
+				MPI_Status status;
+				// The first slave receives the average from the second slave
+				node->relion_MPI_Recv(MULTIDIM_ARRAY(lowres_data), 2*MULTIDIM_SIZE(lowres_data), MY_MPI_DOUBLE, 2, MPITAG_IMAGE, MPI_COMM_WORLD, status);
+				node->relion_MPI_Recv(MULTIDIM_ARRAY(lowres_weight), MULTIDIM_SIZE(lowres_weight), MY_MPI_DOUBLE, 2, MPITAG_RFLOAT, MPI_COMM_WORLD, status);
+                //after recieve test data from node 2, set test data for node 1
+                wsum_model.BPref[iclass].setTestDataAndWeight(lowres_data, lowres_weight);
+
+                //get test data for node 1
+                wsum_model.BPref[iclass].getTestDataAndWeight(lowres_data, lowres_weight);
+				// The first slave sends the lowres_data and lowres_weight also back to the second slave
+				node->relion_MPI_Send(MULTIDIM_ARRAY(lowres_data), 2*MULTIDIM_SIZE(lowres_data), MY_MPI_DOUBLE, 2, MPITAG_IMAGE, MPI_COMM_WORLD);
+				node->relion_MPI_Send(MULTIDIM_ARRAY(lowres_weight), MULTIDIM_SIZE(lowres_weight), MY_MPI_DOUBLE, 2, MPITAG_RFLOAT, MPI_COMM_WORLD);
+
+			}
+
+		}
+	}
+
+
+#ifdef DEBUG
+	std::cerr << "MlOptimiserMpi::exchangeTwoHalves: done" << std::endl;
 #endif
 
 }
@@ -3007,10 +3115,20 @@ void MlOptimiserMpi::iterate()
 
 		// Update subset_size
 		updateSubsetSize(node->isMaster());
-
+        
 		// Randomly take different subset of the particles each time we do a new "iteration" in SGD
 		mydata.randomiseOriginalParticlesOrder(random_seed+iter, do_split_random_halves,  subset_size < mydata.numberOfOriginalParticles() );
-
+        if(iter != 1){
+            if(mymodel.do_tv){
+                mymodel.tv_alpha *= exp(-0.04);
+                mymodel.tv_beta *= exp(-0.04);
+                mymodel.tv_weight *= exp(0.025);
+                //mymodel.tv_iters = mymodel.tv_iters*exp(0.035);
+            }
+            acceptance_ratio *= 1.035;
+            adaptive_fraction *= 1.01;
+            adaptive_fraction = std::min(adaptive_fraction, 0.999);
+        }
 		// Nobody can start the next iteration until everyone has finished
 		MPI_Barrier(MPI_COMM_WORLD);
 
@@ -3094,6 +3212,9 @@ void MlOptimiserMpi::iterate()
 			// For asymmetric molecules, join 2 half-reconstructions at the lowest resolutions to prevent them from diverging orientations
 			if (low_resol_join_halves > 0.)
 				joinTwoHalvesAtLowResolution();
+
+            //after exchange two halves, we have test data and weight in backprojector
+            exchangeTwoHalves();
 
 #ifdef DEBUG
 			std::cerr << " before compareHalves..." << std::endl;
