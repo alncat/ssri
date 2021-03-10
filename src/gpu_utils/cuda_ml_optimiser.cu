@@ -39,7 +39,7 @@ void getRealRefProjPair(MlOptimiserCuda* cudaMLO, std::unique_ptr<CudaGlobalPtr<
 												std::vector<float>& real_images, int image_size, float weight,
 												CudaProjectorKernel& projKernel, int t_i, bool write_out_data);
 
-void refineCTFNewton(CTF& new_ctf, MlOptimiserCuda* baseMLO, OptimisationParamters &op, int ipart, int image_size,
+void refineCTFNewton(CTF& new_ctf, MlOptimiser* baseMLO, OptimisationParamters &op, int ipart, int image_size,
 										 CudaGlobalPtr<XFLOAT>& wdiff2s_AA, CudaGlobalPtr<XFLOAT>& wdiff2s_XA);
 
 void getFourierTransformsAndCtfs(long int my_ori_particle,
@@ -424,7 +424,7 @@ void getFourierTransformsAndCtfs(long int my_ori_particle,
 
 		CTOC(cudaMLO->timer,"selfTranslate");
 
-		CnTIC(cudaMLO->timer,"calcFimg");
+		CTIC(cudaMLO->timer,"calcFimg");
 		size_t current_size_x = baseMLO->mymodel.current_size / 2 + 1;
 		size_t current_size_y = baseMLO->mymodel.current_size;
 		size_t current_size_z = (cudaMLO->dataIs3D) ? baseMLO->mymodel.current_size : 1;
@@ -2815,8 +2815,8 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 					false,//baseMLO->refs_are_ctf_corrected, //toggle ctf correction
 					cudaMLO->dataIs3D,
 					cudaMLO->classStreams[exp_iclass],
-					refine_ctf,
-					save_proj);
+					true, //refine_ctf,
+					false); //save_proj
             //get the difference between projection and real image
             //w(x - pv)
             //pass it to vae and get a reconstrcuted difference
@@ -2856,7 +2856,7 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
             CTF new_ctf;
 						bool refine_ctf_with_torch = DIRECT_A1D_ELEM(baseMLO->mymodel.data_vs_prior_class[exp_iclass], int(baseMLO->mymodel.ori_size/5.3)) > 1.;
 						//refine ctf only when the angular sampling is less than 7.5 degree
-						refine_ctf_with_torch &&= baseMLO->sampling.healpix_order > 2;
+						refine_ctf_with_torch = refine_ctf_with_torch && (baseMLO->sampling.healpix_order > 2);
             //std::cout << baseMLO->do_ctf_correction << " " << cudaMLO->dataIs3D << " " << sp.iclass_max - sp.iclass_min << std::endl;
 						
             if(baseMLO->do_ctf_correction && !cudaMLO->dataIs3D && sp.iclass_max - sp.iclass_min == 0){
@@ -2865,9 +2865,9 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 								//start refining defocus parameters using libtorch lbfgs
 								if(refine_ctf_with_torch){
 									//read defocus parameters									
-									RFLOAT defocus_u = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_U);
-                  RFLOAT defocus_v = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_V);
-                  RFLOAT defocus_a = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_ANGLE);
+									float defocus_u = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_U);
+                  float defocus_v = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_V);
+                  float defocus_a = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_ANGLE);
 									//convert angle to radian
 									defocus_a = DEG2RAD(defocus_a);
 									//using new_ctf to calculate ks and q0
@@ -3763,7 +3763,7 @@ void getRealRefProjPair(MlOptimiserCuda* cudaMLO, std::unique_ptr<CudaGlobalPtr<
 		//major_projections[(exp_iclass - sp.iclass_min)][index] = major_projections[exp_iclass-sp.iclass_min][index]/major_weights[exp_iclass - sp.iclass_min][t_i];
 		float real = (*major_projection)[index]/weight;
 		float imag = (*major_projection)[index+1]/weight;
-		float real_im = (*major_image])[index]/weight;
+		float real_im = (*major_image)[index]/weight;
 		float imag_im = (*major_image)[index+1]/weight;
 		//major_projections[(exp_iclass - sp.iclass_min)][index+1] = major_projections[exp_iclass-sp.iclass_min][index + 1]/major_weights[exp_iclass - sp.iclass_min][t_i];
 		//major_projections[i_cls][index] = real/weight;
@@ -3827,7 +3827,7 @@ void getRealRefProjPair(MlOptimiserCuda* cudaMLO, std::unique_ptr<CudaGlobalPtr<
 }
 
 //refine ctf parameters using netwon raphson method
-void refineCTFNewton(CTF& new_ctf, MlOptimiserCuda* baseMLO, OptimisationParamters &op, int ipart, int image_size,
+void refineCTFNewton(CTF& new_ctf, MlOptimiser* baseMLO, OptimisationParamters &op, int ipart, int image_size,
 										 CudaGlobalPtr<XFLOAT>& wdiff2s_AA, CudaGlobalPtr<XFLOAT>& wdiff2s_XA)
 {
 	MultidimArray<RFLOAT> Fctf;
@@ -4173,3 +4173,4 @@ void refineCTFNewton(CTF& new_ctf, MlOptimiserCuda* baseMLO, OptimisationParamte
 		}
 	}
 }
+

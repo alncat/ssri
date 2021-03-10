@@ -8,7 +8,6 @@
 #include "src/gpu_utils/cuda_backprojector.h"
 #include "src/gpu_utils/cuda_fft.h"
 #include "src/gpu_utils/cuda_benchmark_utils.h"
-//#include "tiny_dnn/util/util.h"
 #include <stack>
 //#include <cufft.h>
 
@@ -32,7 +31,7 @@
 //		raise(SIGSEGV);
 //    }
 //}
-//tiny_dnn::vec_t test_vec;
+
 class SamplingParameters
 {
 public:
@@ -536,11 +535,4 @@ public:
 
 };
 
-void getRealRefProjPair(MlOptimiserCuda* cudaMLO, std::unique_ptr<CudaGlobalPtr<XFLOAT>>& major_projection,
-												std::unique_ptr<CudaGlobalPtr<XFLOAT>>& major_iamge, std::vector<float>& real_projections,
-												std::vector<float>& real_images, int image_size, float weight,
-												CudaProjectorKernel& projKernel, int t_i, bool write_out_data);
-
-void refineCTFNewton(CTF& new_ctf, MlOptimiserCuda* baseMLO, OptimisationParamters &op, int ipart, int image_size,
-										 CudaGlobalPtr<XFLOAT>& wdiff2s_AA, CudaGlobalPtr<XFLOAT>& wdiff2s_XA);
 #endif
