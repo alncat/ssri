@@ -34,6 +34,14 @@
 
 static pthread_mutex_t global_mutex = PTHREAD_MUTEX_INITIALIZER;
 
+void getRealRefProjPair(MlOptimiserCuda* cudaMLO, std::unique_ptr<CudaGlobalPtr<XFLOAT>>& major_projection,
+												std::unique_ptr<CudaGlobalPtr<XFLOAT>>& major_iamge, std::vector<float>& real_projections,
+												std::vector<float>& real_images, int image_size, float weight,
+												CudaProjectorKernel& projKernel, int t_i, bool write_out_data);
+
+void refineCTFNewton(CTF& new_ctf, MlOptimiserCuda* baseMLO, OptimisationParamters &op, int ipart, int image_size,
+										 CudaGlobalPtr<XFLOAT>& wdiff2s_AA, CudaGlobalPtr<XFLOAT>& wdiff2s_XA);
+
 void getFourierTransformsAndCtfs(long int my_ori_particle,
 		OptimisationParamters &op,
 		SamplingParameters &sp,
@@ -3735,7 +3743,7 @@ void MlOptimiserCuda::doThreadExpectationSomeParticles(int thread_id)
 void getRealRefProjPair(MlOptimiserCuda* cudaMLO, std::unique_ptr<CudaGlobalPtr<XFLOAT>>& major_projection,
 												std::unique_ptr<CudaGlobalPtr<XFLOAT>>& major_image,
 												std::vector<float>& real_projections, std::vector<float>& real_images, int image_size, float weight,
-												Cudaprojectorkernel& projKernel, int t_i, bool write_out_data)
+												CudaProjectorKernel& projKernel, int t_i, bool write_out_data)
 {
 	std::vector<float> i_projection(cudaMLO->transformer1.reals.getSize(), 0.);
 	std::vector<float> i_image(cudaMLO->transformer1.reals.getSize(), 0.);

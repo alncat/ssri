@@ -3,9 +3,9 @@
 # OPUS-SSRI
 
 
-OPUS-SSRI(Sparsity and Smoothness Regularized Imaging) is a stand-alone computer 
-program for Maximum A Posteriori refinement of (multiple) 3D reconstructions in cryo-electron microscopy. It is developed by the 
-research group of Jianpeng Ma in Baylor College of Medicine. This implementation is based on the software [RELION](https://www.ncbi.nlm.nih.gov/pubmed/22100448).
+OPUS-SSRI(Sparsity and Smoothness Regularized Imaging) is a stand-alone computer
+program for Maximum A Posteriori refinement of (multiple) 3D reconstructions in cryo-electron microscopy. It is developed by the
+research group of Jianpeng Ma in Baylor College of Medicine and Fudan University. This implementation is based on the software [RELION](https://www.ncbi.nlm.nih.gov/pubmed/22100448).
 
 ## Installation
 
@@ -14,7 +14,7 @@ OPUS-SSRI can be installed by using the docker command below.
 ```
 docker pull alncat/opus-ssri:first
 ```
-To make the docker image work properly, you should set up gpu support for docker. 
+To make the docker image work properly, you should set up gpu support for docker.
 You can follow the instruction at https://www.tensorflow.org/install/docker .
 We can then create a container from the image via
 ```
@@ -52,19 +52,19 @@ Option | Function
 An exmaple of the command for running OPUS-SSRI is shown below,
 
 ```
-mpiexec -n 3 /relion-luo/build/bin/relion_refine_mpi --o /output-folder --i particle-stack --ini_high 40 \ 
+mpiexec -n 3 /relion-luo/build/bin/relion_refine_mpi --o /output-folder --i particle-stack --ini_high 40 \
 --dont_combine_weights_via_disc --pool 4 --ctf --ctf_corrected_ref --iter 25 --particle_diameter 256 \
---flatten_solvent --zero_mask --oversampling 1 --healpix_order 2 --offset_range 5 --offset_step 2 \ 
+--flatten_solvent --zero_mask --oversampling 1 --healpix_order 2 --offset_range 5 --offset_step 2 \
 --norm --scale --j 8 --gpu 0,1,2,3 --tv_alpha 1.0 --tv_beta 2.0 --tv_eps 0.01 --tv_epsp 0.01 \
---tv_weight 0.1 --tv_lr 0.5 --tv_iters 150 --ref initial-map --free_gpu_memory 256 --auto_refine \ 
---split_random_halves --low_resol_join_halves 50 --tv --adaptive_fraction 0.94 --preread_images --sym C4 
+--tv_weight 0.1 --tv_lr 0.5 --tv_iters 150 --ref initial-map --free_gpu_memory 256 --auto_refine \
+--split_random_halves --low_resol_join_halves 50 --tv --adaptive_fraction 0.94 --preread_images --sym C4
 
 ```
 ## Build instruction (Under development!!!)
-The develop docker image is alncat/ssri-torch:latest .
-To build this program from scratch inside docker image, we can first create a build directory in source directory. 
-This docker image contains cmake with version above 3.19.4, cuda 10.1, cudnn and latest version of libtorch, fftw library with threads. 
-In case of missing reference to cublas, we can install cublas and link it to the directory of cuda 10.1 manually by executing 
+The docker image for developmenet is alncat/ssri-torch:latest .
+To build this program from scratch inside docker image, we can first create a build directory in source directory.
+This docker image contains cmake with version above 3.19.4, cuda 10.1, cudnn and latest version of libtorch, fftw library with threads.
+In case of missing reference to cublas, we can install cublas and link it to the directory of cuda 10.1 manually by executing
 ```
 sudo ln -s -T /usr/lib/x86_64-linux-gnu/libcublas.so /usr/local/cuda-10.1/lib64/libcublas.so
 ```
@@ -72,6 +72,11 @@ We may need to set the environement variables FFTW_LIB and FFTW_INCLUDE before c
 ```
 export FFTW_LIB=/usr/lib64 && export FFTW_INCLUDE=/usr/include
 ```
+We then change the development tool set to gcc/g++-7 via
+```
+scl enable devtoolset-7 bash
+```
+In order to use the fft api in libtorch, we also need to adding one line "#include <torch/fft.h>" to the include file "/root/gpu/libtorch/include/torch/csrc/api/include/torch/all.h".
 We then change to the build directory. Inside the build directory, execute
 ```
 /cmake-3.19.4/bin/cmake -DCMAKE_INSTALL_PREFIX=~/gpu/ssri/build/bin/ -DCMAKE_PREFIX_PATH=/root/gpu/libtorch/share/cmake/Torch -DCMAKE_CUDA_COMPILER_FORCED=ON -DGUI=OFF -DCUDA_TOOLKIT_ROOT_DIR=/usr/local/cuda-10.1/ ../
