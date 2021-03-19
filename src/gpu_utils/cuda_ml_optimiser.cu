@@ -2863,7 +2863,7 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
                 //note that AA, XA, sum are fftw centered
                 DEBUG_HANDLE_ERROR(cudaStreamSynchronize(cudaMLO->classStreams[exp_iclass]));
 								//start refining defocus parameters using libtorch lbfgs
-								if(refine_ctf_with_torch){
+								if(!refine_ctf_with_torch && false){
 									//read defocus parameters									
 									float defocus_u = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_U);
                   float defocus_v = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_V);
@@ -2886,8 +2886,10 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 									
 									//use 100 angstrom as default restraint, real_projections is data, real_images is reference to be
 									//matched against
+                                    pthread_mutex_lock(&global_mutex);
 									optimize_ctf(real_projections, real_images, defocus_u, defocus_v, defocus_a, 100,
 															 Ks, Q0, baseMLO->mymodel.ori_size, baseMLO->mymodel.pixel_size, true);
+                                    pthread_mutex_unlock(&global_mutex);
 
 									//update ctf parameters in new_ctf
 									new_ctf.setValues(defocus_u,
@@ -2907,7 +2909,7 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
                 wdiff2s_sum.cp_to_host();
                 wdiff2s_AA.streamSync();
 								//another ctf parameter refinement method using wdiff2s_xa.
-								if(!refine_ctf_with_torch && false)
+								if(refine_ctf_with_torch)
 									{
 										refineCTFNewton(new_ctf, baseMLO, op, ipart, image_size, wdiff2s_AA, wdiff2s_XA);
 									}
@@ -2966,7 +2968,7 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
                         exp_AA[ipart] += wdiff2s_AA[j];
                         exp_XX[ipart] += wdiff2s_sum[j];
                         //RFLOAT tmp = wdiff2s_sum[j];
-                        wdiff2s_sum[j] = wdiff2s_sum[j] - 2*wdiff2s_XA[j] + wdiff2s_AA[j];
+                        wdiff2s_sum[j] = wdiff2s_sum[j] - 2.*wdiff2s_XA[j] + wdiff2s_AA[j];
                         wdiff2s_XA[j] = fabs(wdiff2s_XA[j]);//tmp;
                     }
                 }
