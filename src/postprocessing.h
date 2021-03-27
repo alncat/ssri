@@ -158,6 +158,9 @@ public:
 			int &best_kpp, int &best_ipp, int &best_jpp,
 			int myradius_count, int search=2);
 
+    // randomize the content inside mask
+    void randomizeMask(MultidimArray<RFLOAT>& vol, MultidimArray<RFLOAT>& mask);
+
 	// Correct amplitudes inhomogeneity due to non-uniform orientational distributions
 	void correctRadialAmplitudeDistribution(MultidimArray<RFLOAT > &I);
 

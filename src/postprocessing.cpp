@@ -19,6 +19,8 @@
  ***************************************************************************/
 
 #include "src/postprocessing.h"
+#include <random>
+#include <chrono>
 
 void Postprocessing::read(int argc, char **argv)
 {
@@ -1067,6 +1069,64 @@ void Postprocessing::run_locres(int rank, int size)
 
 }
 
+void Postprocessing::randomizeMask(MultidimArray<RFLOAT>& vol, MultidimArray<RFLOAT>& mask) 
+{
+    std::vector<RFLOAT> hist(1001, 0.);
+    //calculate histogram inside the mask
+    RFLOAT min_val = 1e10;
+    RFLOAT max_val = -1e10;
+    FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(vol)
+    {
+        if(DIRECT_MULTIDIM_ELEM(mask, n) == 0.) continue;
+        RFLOAT value = DIRECT_MULTIDIM_ELEM(vol, n);
+        if(value < min_val) min_val = value;
+        if(value > max_val) max_val = value;
+    }
+    RFLOAT interval = (max_val - min_val) / (1000.);
+    std::cout << "the range of density in volume is " << min_val << " to " << max_val << std::endl;
+    //multiply with mask
+    long int count = 0;
+    FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(vol)
+    {
+        if(DIRECT_MULTIDIM_ELEM(mask, n) == 0.) continue;
+        RFLOAT value = DIRECT_MULTIDIM_ELEM(vol, n);
+        int bin = ROUND((value -  min_val) / interval);
+        if(bin > 1000) continue;
+        hist[bin]++;
+        count++;
+    }
+    //compute cdf
+    std::vector<RFLOAT> cdf(hist.size(),  0.);
+    cdf[0] = hist[0] / count;
+    for(int i = 1; i < hist.size(); i++) 
+    {
+        hist[i] /= count;
+        cdf[i] =  cdf[i-1] + hist[i];
+    }
+    //sampling from histogram
+    std::mt19937_64 rng;
+    // initialize the random number generator with time-dependent seed
+    uint64_t timeSeed = std::chrono::high_resolution_clock::now().time_since_epoch().count();
+    std::seed_seq ss{uint32_t(timeSeed & 0xffffffff), uint32_t(timeSeed>>32)};
+    rng.seed(ss);
+    std::uniform_real_distribution<double>  unif(0, 1);
+    FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(vol)
+    {
+        if(DIRECT_MULTIDIM_ELEM(mask, n) ==  0.) continue;
+        RFLOAT tmp = unif(rng);
+        int selected = 0;
+        for(int i = 0; i < cdf.size(); i++)
+        {
+            if(cdf[i] >= tmp)
+            {
+                selected = i;
+                break;
+            }
+        }
+        DIRECT_MULTIDIM_ELEM(vol, n) = min_val + selected * interval;
+    }
+
+}
 
 void Postprocessing::run()
 {
@@ -1124,8 +1184,10 @@ void Postprocessing::run()
 		}
 		if (randomize_at > 0)
 		{
-			randomizePhasesBeyond(I1(), randomize_at);
-			randomizePhasesBeyond(I2(), randomize_at);
+			//randomizePhasesBeyond(I1(), randomize_at);
+			//randomizePhasesBeyond(I2(), randomize_at);
+            randomizeMask(I1(), Im());
+            randomizeMask(I2(), Im());
 			// Mask randomized phases maps and calculated fsc_random_masked
 			I1() *= Im();
 			I2() *= Im();
@@ -1155,7 +1217,7 @@ void Postprocessing::run()
 	int global_resol_i = 0;
 	FOR_ALL_DIRECT_ELEMENTS_IN_ARRAY1D(fsc_true)
 	{
-		if ( DIRECT_A1D_ELEM(fsc_true, i) < 0.143)
+		if ( DIRECT_A1D_ELEM(fsc_true, i) < 0.2 )//0.143)
 			break;
 		global_resol = XSIZE(I1())*angpix/(RFLOAT)i;
 		global_resol_i = i;

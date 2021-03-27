@@ -36,6 +36,8 @@ void MlModel::initialise(bool _do_sgd, bool _do_nag)
 	MultidimArray<RFLOAT > aux;
     aux.initZeros(ori_size / 2 + 1);
 
+    // auxiliary image
+
 	// Now resize all relevant vectors
     Iref.resize(nr_classes * nr_bodies);
     masks_bodies.resize(nr_bodies);
@@ -53,6 +55,10 @@ void MlModel::initialise(bool _do_sgd, bool _do_nag)
     // TODO handle these two correctly.
     bfactor_correction.resize(nr_groups, 0.);
     scale_correction.resize(nr_groups, 1.);
+    beam_tilts.resize(nr_micrographs, std::make_pair(0,0));
+    //first is kV, second is Cs
+    beam_tilts_parameters.resize(nr_micrographs, std::make_pair(200, 0.));
+    beam_tilts_parameters_set.resize(nr_micrographs, false);
 
 	acc_rot.resize(nr_classes * nr_bodies, 0);
 	acc_trans.resize(nr_classes * nr_bodies, 0);
@@ -650,6 +656,7 @@ void MlModel::readImages(FileName fn_ref, bool _is_3d_model, int _ori_size, Expe
 
 	// Set some stuff
 	nr_groups = _mydata.groups.size();
+    nr_micrographs  =  _mydata.micrographs.size();
 	ori_size = _ori_size;
 	RFLOAT avg_norm_correction = 1.;
 
@@ -1069,6 +1076,12 @@ void MlWsumModel::initialise(MlModel &_model, FileName fn_sym, bool asymmetric_p
     wsum_signal_product_spectra.resize(nr_groups, aux);
     wsum_reference_power_spectra.resize(nr_groups, aux);
 
+    //create an array of complex FTs for storing the group correlation between image and reference when doing SPA
+    if(ref_dim == 3 && data_dim == 2) 
+    {
+        MultidimArray<Complex> aux(ori_size, ori_size/2 + 1);
+        wsum_ctf_image_reference_product.resize(nr_micrographs, aux);
+    }
     // Resize MlWsumModel-specific vectors
     BackProjector BP(ori_size, ref_dim, fn_sym, interpolator, padding_factor, r_min_nn,
     		         ML_BLOB_ORDER, ML_BLOB_RADIUS, ML_BLOB_ALPHA, data_dim, _skip_gridding);
@@ -1112,6 +1125,11 @@ void MlWsumModel::initZeros()
         sigma2_noise[igroup].initZeros();
         wsum_signal_product_spectra[igroup].initZeros();
         wsum_reference_power_spectra[igroup].initZeros();
+    }
+    for (int imic = 0; imic < nr_micrographs; imic++)
+    {
+        if (ref_dim == 3 && data_dim == 2)
+            wsum_ctf_image_reference_product[imic].initZeros();
     }
 }
 

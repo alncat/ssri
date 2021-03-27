@@ -996,6 +996,13 @@ void selfApplyBeamTilt(MultidimArray<Complex > &Fimg, RFLOAT beamtilt_x, RFLOAT 
 void applyBeamTilt(const MultidimArray<Complex > &Fin, MultidimArray<Complex > &Fout, RFLOAT beamtilt_x, RFLOAT beamtilt_y,
 		RFLOAT wavelength, RFLOAT Cs, RFLOAT angpix, int ori_size);
 
+RFLOAT BeamTiltGradHess(MultidimArray<Complex > &Fimg, RFLOAT beamtilt_x, RFLOAT beamtilt_y,
+		RFLOAT wavelength, RFLOAT Cs, RFLOAT angpix, int ori_size, RFLOAT& grad_bx, RFLOAT& grad_by, 
+        RFLOAT& hess_x, RFLOAT& hess_y, RFLOAT& hess_xy);
+
+void OptimizeBeamTilt(MultidimArray<Complex> &Fimg, RFLOAT& beamtilt_x, RFLOAT& beamtilt_y,
+        RFLOAT wavelength, RFLOAT Cs, RFLOAT angpix, int ori_size, int iterations);
+
 void padAndFloat2DMap(const MultidimArray<RFLOAT > &v, MultidimArray<RFLOAT> &out, int factor = 2);
 
 void amplitudeOrPhaseMap(const MultidimArray<RFLOAT > &v, MultidimArray<RFLOAT > &amp, int output_map_type);

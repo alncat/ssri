@@ -384,6 +384,21 @@ void MlOptimiser::parseContinue(int argc, char **argv)
 	asymmetric_padding = parser.checkOption("--asymmetric_padding", "", "false", true);
 	maximum_significants = textToInteger(parser.getOption("--maxsig", "", "0", true));
 	skip_gridding = parser.checkOption("--skip_gridding", "", "false", true);
+    //add support for ssri when using --continue
+    mymodel.do_tv = parser.checkOption("--tv", "Using total variation based regularization");
+
+    mymodel.tv_iters = textToInteger(parser.getOption("--tv_iters", "Number of iterations used in sparsity and smoothness based reconstruction", "100"));
+    mymodel.l_r = textToFloat(parser.getOption("--tv_lr", "Learning rate for graph net based reconstrunction", "1"));
+    mymodel.tv_weight = textToFloat(parser.getOption("--tv_weight", "Weight for implicit regularisation parameter", "0.1"));
+    mymodel.tv_alpha = textToFloat(parser.getOption("--tv_alpha", "Regularisation parameter for L1 norm", "0.1"));
+    mymodel.tv_beta = textToFloat(parser.getOption("--tv_beta", "Regularisation parameter for tv norm", "0.1"));
+    mymodel.tv_eps  = textToFloat(parser.getOption("--tv_eps", "eps value for l1 norm", "0.1"));
+    mymodel.tv_epsp = textToFloat(parser.getOption("--tv_epsp", "eps value for tv norm", "0.1"));
+
+    //toggle on beam tilt optimization
+    mymodel.do_beam_tilt_optimization = parser.checkOption("--beamtilt_opt", "Performing beamtilt optimization");
+
+    acceptance_ratio = textToDouble(parser.getOption("--acceptance_ratio", "The acceptance_ratio for sample random sampling", "1."));
 
 	do_print_metadata_labels = false;
 	do_print_symmetry_ops = false;
@@ -3684,6 +3699,24 @@ void MlOptimiser::maximizationOtherParameters()
 
 	if (do_scale_correction && !((iter==1 && do_firstiter_cc) || do_always_cc) )
 	{
+        //optimize  beamtilt
+        if(mymodel.do_beam_tilt_optimization)
+        {
+            for(int imic = 0; imic < mymodel.nr_micrographs; imic++)
+            {
+                if (mymodel.beam_tilts_parameters_set[imic])
+                    std::cout <<  "WRONG! "  << imic << " is not set!" << std::endl;
+                RFLOAT beamtilt_x = mymodel.beam_tilts[imic].first;
+                RFLOAT beamtilt_y = mymodel.beam_tilts[imic].second;
+                RFLOAT V = 1000. * mymodel.beam_tilts_parameters[imic].first;
+                RFLOAT Cs = mymodel.beam_tilts_parameters[imic].second;
+                RFLOAT lambda = 12.2643247 / sqrt(V * (1. + V *  0.978466e-6));
+                OptimizeBeamTilt(wsum_model.wsum_ctf_image_reference_product[imic], beamtilt_x, beamtilt_y, 
+                        lambda, Cs, mymodel.pixel_size, mymodel.ori_size, 6.*float(mymodel.current_size)/float(mymodel.ori_size));
+                mymodel.beam_tilts[imic].first = beamtilt_x;
+                mymodel.beam_tilts[imic].second = beamtilt_y;
+            }
+        }
 		for (int igroup = 0; igroup < mymodel.nr_groups; igroup++)
 		{
 			mymodel.scale_correction[igroup] *= mu;
@@ -8141,6 +8174,10 @@ void MlOptimiser::setMetaDataSubset(int first_ori_particle_id, int last_ori_part
 		{
 			long int part_id = mydata.ori_particles[ori_part_id].particles_id[ipart];
 
+            int group_id = mydata.getGroupId(part_id);
+
+            int micrograph_id = mydata.getMicrographId(part_id);
+
 #ifdef DEBUG_CHECKSIZES
 			if (part_id >= mydata.MDimg.numberOfObjects())
 			{
@@ -8175,6 +8212,14 @@ void MlOptimiser::setMetaDataSubset(int first_ori_particle_id, int last_ori_part
             mydata.MDimg.setValue(EMDL_CTF_DEFOCUSU, DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_CTF_DEFOCUS_U), part_id);
             mydata.MDimg.setValue(EMDL_CTF_DEFOCUSV, DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_CTF_DEFOCUS_V), part_id);
             mydata.MDimg.setValue(EMDL_CTF_DEFOCUS_ANGLE, DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_CTF_DEFOCUS_ANGLE), part_id);
+            //set beamtilt
+            if(mymodel.do_beam_tilt_optimization)
+            {
+                RFLOAT beamtilt_x = mymodel.beam_tilts[micrograph_id].first;
+                RFLOAT beamtilt_y = mymodel.beam_tilts[micrograph_id].second;
+                mydata.MDimg.setValue(EMDL_IMAGE_BEAMTILT_X, beamtilt_x, part_id);
+                mydata.MDimg.setValue(EMDL_IMAGE_BEAMTILT_Y, beamtilt_y, part_id);
+            }
 
 			// For the moment, CTF, prior and transformation matrix info is NOT updated...
 			RFLOAT prior_x = DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_XOFF_PRIOR);
@@ -8469,6 +8514,18 @@ void MlOptimiser::getMetaAndImageDataSubset(int first_ori_particle_id, int last_
 					if (!mydata.MDmic.getValue(EMDL_CTF_PHASESHIFT, phase_shift, mic_id))
 						phase_shift=0;
 
+                //set micrograph beam tilt parameters
+                if (mymodel.do_beam_tilt_optimization)
+                {
+                    //set micrograph defocus parameters for beam tilt if not set
+                    if (!mymodel.beam_tilts_parameters_set[mic_id])
+                    {
+                        mymodel.beam_tilts_parameters_set[mic_id] = true;
+                        mymodel.beam_tilts_parameters[mic_id].first = kV;
+                        mymodel.beam_tilts_parameters[mic_id].second = Cs;
+                    }
+
+                }
 				DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_CTF_VOLTAGE) = kV;
 				DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_CTF_DEFOCUS_U) = DeltafU;
 				DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_CTF_DEFOCUS_V) = DeltafV;

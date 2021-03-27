@@ -78,7 +78,7 @@ add_compile_definitions(_GLIBCXX_USE_CXX11_ABI=0)
 # ------------------------------------------------------------------------CUDA-ARCH--
 if(NOT DEFINED CUDA_ARCH)
     message(STATUS "Setting fallback CUDA_ARCH=61")
-    set(CUDARCH "-arch=sm_61")
+    set(CUDARCH "-arch=sm_75")
 else(NOT DEFINED CUDA_ARCH)
     message(STATUS "Using provided CUDA_ARCH=${CUDA_ARCH}")
     set(CUDARCH "-arch=sm_${CUDA_ARCH}")
@@ -122,7 +122,7 @@ if(CUDA)
     # -----------------------------------------------------------------------------CUDA--
     # DOC: http://www.cmake.org/cmake/help/v3.0/module/FindCUDA.html
     FIND_PACKAGE(CUDA)
-    string(APPEND CMAKE_CUDA_FLAGS " -gencode arch=compute_61,code=sm_61")
+    string(APPEND CMAKE_CUDA_FLAGS " -gencode arch=compute_75,code=sm_75")
     #find_package(CUDAToolkit)
 endif()
 

@@ -40,7 +40,8 @@ void getRealRefProjPair(MlOptimiserCuda* cudaMLO, std::unique_ptr<CudaGlobalPtr<
 												CudaProjectorKernel& projKernel, int t_i, bool write_out_data);
 
 void refineCTFNewton(CTF& new_ctf, MlOptimiser* baseMLO, OptimisationParamters &op, int ipart, int image_size,
-										 CudaGlobalPtr<XFLOAT>& wdiff2s_AA, CudaGlobalPtr<XFLOAT>& wdiff2s_XA);
+										 CudaGlobalPtr<XFLOAT>& wdiff2s_AA, CudaGlobalPtr<XFLOAT>& wdiff2s_XA, 
+                                         bool refine_defocus, bool refine_angle);
 
 void getFourierTransformsAndCtfs(long int my_ori_particle,
 		OptimisationParamters &op,
@@ -77,7 +78,9 @@ void getFourierTransformsAndCtfs(long int my_ori_particle,
 		// What is my particle_id?
 		long int part_id = baseMLO->mydata.ori_particles[my_ori_particle].particles_id[ipart];
 		// Which group do I belong?
-		int group_id =baseMLO->mydata.getGroupId(part_id);
+		int group_id = baseMLO->mydata.getGroupId(part_id);
+        // Which micrograph do I belong?
+        int micrograph_id = baseMLO->mydata.getMicrographId(part_id);
 
 		// Get the right line in the exp_fn_img strings (also exp_fn_recimg and exp_fn_ctfs)
 		int istop = 0;
@@ -493,9 +496,15 @@ void getFourierTransformsAndCtfs(long int my_ori_particle,
 		//
 		RFLOAT beamtilt_x = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_BEAMTILT_X);
 		RFLOAT beamtilt_y = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_BEAMTILT_Y);
+        if(baseMLO->mymodel.do_beam_tilt_optimization)
+        {
+            beamtilt_x = baseMLO->mymodel.beam_tilts[micrograph_id].first;
+            beamtilt_y = baseMLO->mymodel.beam_tilts[micrograph_id].second;
+        }
 		RFLOAT Cs = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_CS);
 		RFLOAT V = 1000. * DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_VOLTAGE);
 		RFLOAT lambda = 12.2643247 / sqrt(V * (1. + V * 0.978466e-6));
+        //or beamtilt optimization is toggled on, read it from wsumodel
 		if (ABS(beamtilt_x) > 0. || ABS(beamtilt_y) > 0.)
 			selfApplyBeamTilt(Fimg, beamtilt_x, beamtilt_y, lambda, Cs,baseMLO->mymodel.pixel_size, baseMLO->mymodel.ori_size);
 
@@ -2085,6 +2094,8 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 	std::vector<MultidimArray<RFLOAT> > exp_wsum_scale_correction_XA, exp_wsum_scale_correction_AA;
     std::vector<RFLOAT> exp_AA, exp_XX;
 	std::vector<MultidimArray<RFLOAT> > thr_wsum_signal_product_spectra, thr_wsum_reference_power_spectra;
+    std::vector<MultidimArray<Complex>> thr_wsum_ctf_image_reference_product;
+    std::vector<MultidimArray<Complex>> exp_wsum_ctf_image_reference_product;
 	exp_wsum_norm_correction.resize(sp.nr_particles, 0.);
     exp_AA.resize(sp.nr_particles, 0.);
     exp_XX.resize(sp.nr_particles, 0.);
@@ -2099,6 +2110,15 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 		thr_wsum_signal_product_spectra.resize(baseMLO->mymodel.nr_groups, aux);
 		thr_wsum_reference_power_spectra.resize(baseMLO->mymodel.nr_groups, aux);
 	}
+
+    // For beam tilt optimization
+    if (baseMLO->mymodel.do_beam_tilt_optimization)
+    {
+        MultidimArray<Complex> aux;
+        aux.initZeros(baseMLO->mymodel.ori_size, baseMLO->mymodel.ori_size/2 + 1);
+        exp_wsum_ctf_image_reference_product.resize(sp.nr_particles, aux);
+        thr_wsum_ctf_image_reference_product.resize(baseMLO->mymodel.nr_micrographs, aux);
+    }
 
 	std::vector<RFLOAT> oversampled_translations_x, oversampled_translations_y, oversampled_translations_z;
 	bool have_warned_small_scale = false;
@@ -2911,7 +2931,14 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 								//another ctf parameter refinement method using wdiff2s_xa.
 								if(refine_ctf_with_torch)
 									{
-										refineCTFNewton(new_ctf, baseMLO, op, ipart, image_size, wdiff2s_AA, wdiff2s_XA);
+                                        refineCTFNewton(new_ctf, baseMLO, op, ipart, image_size, wdiff2s_AA, wdiff2s_XA, true, false);
+
+                                        //update defocus
+                                        DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_U) = new_ctf.DeltafU;
+                                        DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_V) = new_ctf.DeltafV;
+                                        //refine angle in second round
+                                        refineCTFNewton(new_ctf, baseMLO, op, ipart, image_size, wdiff2s_AA, wdiff2s_XA, false, true);
+
 									}
 
 								//if(DIRECT_A1D_ELEM(baseMLO->mymodel.data_vs_prior_class[exp_iclass], int(baseMLO->mymodel.ori_size/5.3)) > 1.){//6))>1.){//4.4) > 1.){
@@ -2936,7 +2963,8 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
                             exp_XX[ipart] += wdiff2s_sum[j];
                             //RFLOAT tmp = wdiff2s_sum[j];
                             wdiff2s_sum[j] = wdiff2s_sum[j] - 2*wdiff2s_XA[j] + wdiff2s_AA[j];
-                            wdiff2s_XA[j] = fabs(wdiff2s_XA[j]);//tmp;
+                            //DIRECT_MULTIDIM_ELEM(exp_wsum_ctf_image_reference_product[ipart], j) += wdiff2s_XA[j];
+                            //wdiff2s_XA[j] = fabs(wdiff2s_XA[j]);//tmp;
                         }
                         //std::cout << "diff_corr :" << (correlation - old_correlation)/correlation << std::endl;
 
@@ -2956,7 +2984,8 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
                             exp_XX[ipart] += wdiff2s_sum[j];
                             //RFLOAT tmp = wdiff2s_sum[j];
                             wdiff2s_sum[j] = wdiff2s_sum[j] - 2*wdiff2s_XA[j] + wdiff2s_AA[j];
-                            wdiff2s_XA[j] = fabs(wdiff2s_XA[j]);//tmp;
+                            //DIRECT_MULTIDIM_ELEM(exp_wsum_ctf_image_reference_product[ipart], j) += wdiff2s_XA[j];
+                            //wdiff2s_XA[j] = fabs(wdiff2s_XA[j]);//tmp;
                         }
                     }
                 }//toggle on ctf refinement when refinement stabilized
@@ -2969,7 +2998,8 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
                         exp_XX[ipart] += wdiff2s_sum[j];
                         //RFLOAT tmp = wdiff2s_sum[j];
                         wdiff2s_sum[j] = wdiff2s_sum[j] - 2.*wdiff2s_XA[j] + wdiff2s_AA[j];
-                        wdiff2s_XA[j] = fabs(wdiff2s_XA[j]);//tmp;
+                        //DIRECT_MULTIDIM_ELEM(exp_wsum_ctf_image_reference_product[ipart], j) += wdiff2s_XA[j];
+                        //wdiff2s_XA[j] = fabs(wdiff2s_XA[j]);//tmp;
                     }
                 }
             }
@@ -3045,12 +3075,13 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 				continue;
 			for (long int j = 0; j < image_size; j++)
 			{
+                DIRECT_MULTIDIM_ELEM(exp_wsum_ctf_image_reference_product[ipart], j) += wdiff2s_XA[AAXA_pos+j];
 				int ires = DIRECT_MULTIDIM_ELEM(baseMLO->Mresol_fine, j);
 				if (ires > -1 && baseMLO->do_scale_correction &&
 						DIRECT_A1D_ELEM(baseMLO->mymodel.data_vs_prior_class[exp_iclass], ires) > 0.167)
 				{
 					DIRECT_A1D_ELEM(exp_wsum_scale_correction_AA[ipart], ires) += wdiff2s_AA[AAXA_pos+j];
-					DIRECT_A1D_ELEM(exp_wsum_scale_correction_XA[ipart], ires) += wdiff2s_XA[AAXA_pos+j];
+					DIRECT_A1D_ELEM(exp_wsum_scale_correction_XA[ipart], ires) += fabs(wdiff2s_XA[AAXA_pos+j]);
 				}
 			}
 			AAXA_pos += image_size;
@@ -3079,6 +3110,7 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 	{
 		long int part_id = baseMLO->mydata.ori_particles[op.my_ori_particle].particles_id[ipart];
 		int group_id = baseMLO->mydata.getGroupId(part_id);
+        int micrograph_id = baseMLO->mydata.getMicrographId(part_id);
 
 		// If the current images were smaller than the original size, fill the rest of wsum_model.sigma2_noise with the power_class spectrum of the images
         for (int ires = 0; ires < baseMLO->mymodel.ori_size/2 + 1; ires++)
@@ -3125,6 +3157,8 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
             
 			thr_wsum_signal_product_spectra[group_id] += exp_wsum_scale_correction_XA[ipart];
 			thr_wsum_reference_power_spectra[group_id] += exp_wsum_scale_correction_AA[ipart];
+            if (baseMLO->mymodel.do_beam_tilt_optimization)
+                thr_wsum_ctf_image_reference_product[micrograph_id] += exp_wsum_ctf_image_reference_product[ipart];
             //let's get the bfactor for each particle here
             bool any_l = false;
             //for (int exp_iclass = sp.iclass_min; exp_iclass <= sp.iclass_max; exp_iclass++)
@@ -3221,8 +3255,13 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 			{
 				baseMLO->wsum_model.wsum_signal_product_spectra[n] += thr_wsum_signal_product_spectra[n];
 				baseMLO->wsum_model.wsum_reference_power_spectra[n] += thr_wsum_reference_power_spectra[n];
-			}
+            }
 		}
+        for (int n = 0; n < baseMLO->mymodel.nr_micrographs; n++)
+        {
+            if (baseMLO->mymodel.do_beam_tilt_optimization)
+                baseMLO->wsum_model.wsum_ctf_image_reference_product[n] += thr_wsum_ctf_image_reference_product[n];
+        }
 		for (int n = 0; n < baseMLO->mymodel.nr_classes; n++)
 		{
 			baseMLO->wsum_model.pdf_class[n] += thr_wsum_pdf_class[n];
@@ -3830,7 +3869,8 @@ void getRealRefProjPair(MlOptimiserCuda* cudaMLO, std::unique_ptr<CudaGlobalPtr<
 
 //refine ctf parameters using netwon raphson method
 void refineCTFNewton(CTF& new_ctf, MlOptimiser* baseMLO, OptimisationParamters &op, int ipart, int image_size,
-										 CudaGlobalPtr<XFLOAT>& wdiff2s_AA, CudaGlobalPtr<XFLOAT>& wdiff2s_XA)
+										 CudaGlobalPtr<XFLOAT>& wdiff2s_AA, CudaGlobalPtr<XFLOAT>& wdiff2s_XA, 
+                                         bool refine_defocus, bool refine_angle)
 {
 	MultidimArray<RFLOAT> Fctf;
 	MultidimArray<RFLOAT> AA_spectrum, AA_counter, ctf_spectrum;
@@ -3965,7 +4005,7 @@ void refineCTFNewton(CTF& new_ctf, MlOptimiser* baseMLO, OptimisationParamters &
 			}
 		}
 		//now do a newton raphson descent
-		if(true){
+		if(refine_defocus){
 			RFLOAT deta = hu*hv - huv*huv;
 			RFLOAT t= (hu + hv);
 			RFLOAT l1 = 0.5*t + sqrt(t*t*0.25 - deta);
@@ -3986,10 +4026,10 @@ void refineCTFNewton(CTF& new_ctf, MlOptimiser* baseMLO, OptimisationParamters &
 			deta = hu*hv - huv*huv;
 			RFLOAT du = (hv*gu - huv*gv)/deta;
 			RFLOAT dv = (-huv*gu + hu*gv)/deta;
-			l1 += (lmax+0.0*lmax) + 0.50*lmax;
-			l2 += (lmax+0.0*lmax) + 0.50*lmax;
-			lmax = std::max(fabs(l1), fabs(l2));
-			lmin = std::min(fabs(l1), fabs(l2));
+			//l1 += (lmax+0.0*lmax) + 0.50*lmax;
+			//l2 += (lmax+0.0*lmax) + 0.50*lmax;
+			//lmax = std::max(fabs(l1), fabs(l2));
+			//lmin = std::min(fabs(l1), fabs(l2));
 
 			//if(lmax > 5.*lmin) {
 			//    //std::cout << abs(l1) << " " << abs(l2) << std::endl;
@@ -4010,7 +4050,7 @@ void refineCTFNewton(CTF& new_ctf, MlOptimiser* baseMLO, OptimisationParamters &
 			defocus_v -= dv;
 		}
 		//update angle
-		if(false){
+		if(refine_angle){
 			RFLOAT lmax = fabs(ht);
 			gt += (lmax+lmax)*(defocus_a - old_defocus_a);
 			ht += (lmax+lmax);
@@ -4023,8 +4063,8 @@ void refineCTFNewton(CTF& new_ctf, MlOptimiser* baseMLO, OptimisationParamters &
 			dt = gt/ht;
 			if(isnan(dt)) 
 				std::cout << idescent << " defocus, a, u, v: " << defocus_a << " " << defocus_u << " " << defocus_v << " dt/defocus_a: " << dt/defocus_a << " gt: " << gt << " ht: " << ht << std::endl;
-			dt = 0.1*(RFLOAT(baseMLO->iter) / (baseMLO->iter + 5.))*dt/(fabs(defocus_u) + fabs(defocus_v) + fabs(defocus_a));//gv/l1;
-			if(fabs(dt) > 0.002*fabs(defocus_a)) dt = copysign(0.002*defocus_a, dt);
+			dt = 0.1*(RFLOAT(baseMLO->iter) / (baseMLO->iter + 5.))*dt;///(fabs(defocus_u) + fabs(defocus_v) + fabs(defocus_a));//gv/l1;
+			if(fabs(dt) > 0.005) dt = copysign(0.005, dt);
 
 			defocus_a -= dt;
 		}

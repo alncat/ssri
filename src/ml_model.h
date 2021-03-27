@@ -61,6 +61,8 @@ public:
 	// Number of image groups with separate sigma2_noise spectra
 	int nr_groups;
 
+    int nr_micrographs;
+
 	// Perform SGD instead of expectation maximization?
 	bool do_sgd;
 
@@ -69,6 +71,9 @@ public:
     int nag_counter;
     // Perform graph based regularization
     bool do_tv;
+
+    // Perform beamtilt optimization
+    bool do_beam_tilt_optimization;
 
     // learning rate graph restraint scale
     RFLOAT l_r, tv_alpha, tv_beta, tv_weight, tv_eps, tv_epsp;
@@ -136,6 +141,11 @@ public:
 
 	// One intensity scale for each group
 	std::vector<RFLOAT> scale_correction;
+
+    // store the beam tilt parameters of each group
+    std::vector<std::pair<RFLOAT, RFLOAT>> beam_tilts;
+    std::vector<std::pair<RFLOAT, RFLOAT>> beam_tilts_parameters;
+    std::vector<bool>                      beam_tilts_parameters_set;
 
 	// One intensity B-factor for each group
 	std::vector<RFLOAT> bfactor_correction;
@@ -423,12 +433,16 @@ public:
 	// That is the number of particles inside each group
 	std::vector<RFLOAT> sumw_group;
 
+    
 	// For the refinement of group intensity scales and bfactors
 	// For each group store weighted sums of experimental image times reference image as a function of resolution
 	std::vector<MultidimArray<RFLOAT > > wsum_signal_product_spectra;
 
 	// For each group store weighted sums of squared reference as a function of resolution
 	std::vector<MultidimArray<RFLOAT > > wsum_reference_power_spectra;
+
+    // For each group store weighted sum of correlations
+    std::vector<MultidimArray<Complex>> wsum_ctf_image_reference_product;
 
 	// Constructor
 	MlWsumModel()
