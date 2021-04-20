@@ -2096,6 +2096,7 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 	std::vector<MultidimArray<RFLOAT> > thr_wsum_signal_product_spectra, thr_wsum_reference_power_spectra;
     std::vector<MultidimArray<Complex>> thr_wsum_ctf_image_reference_product;
     std::vector<MultidimArray<Complex>> exp_wsum_ctf_image_reference_product;
+    std::vector<int>                       thr_wsum_ctf_image_reference_product_indices;
 	exp_wsum_norm_correction.resize(sp.nr_particles, 0.);
     exp_AA.resize(sp.nr_particles, 0.);
     exp_XX.resize(sp.nr_particles, 0.);
@@ -2117,7 +2118,6 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
         MultidimArray<Complex> aux;
         aux.initZeros(baseMLO->mymodel.ori_size, baseMLO->mymodel.ori_size/2 + 1);
         exp_wsum_ctf_image_reference_product.resize(sp.nr_particles, aux);
-        thr_wsum_ctf_image_reference_product.resize(baseMLO->mymodel.nr_micrographs, aux);
     }
 
 	std::vector<RFLOAT> oversampled_translations_x, oversampled_translations_y, oversampled_translations_z;
@@ -2649,12 +2649,15 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 
 		CudaGlobalPtr<XFLOAT> wdiff2s_AA(baseMLO->mymodel.nr_classes*image_size, 0, cudaMLO->devBundle->allocator);
 		CudaGlobalPtr<XFLOAT> wdiff2s_XA(baseMLO->mymodel.nr_classes*image_size, 0, cudaMLO->devBundle->allocator);
+        CudaGlobalPtr<XFLOAT> wdiff2s_XA_imag(baseMLO->mymodel.nr_classes*image_size, 0, cudaMLO->devBundle->allocator);
 		CudaGlobalPtr<XFLOAT> wdiff2s_sum(image_size, 0, cudaMLO->devBundle->allocator);
 
 		wdiff2s_AA.device_alloc();
 		wdiff2s_AA.device_init(0.f);
 		wdiff2s_XA.device_alloc();
 		wdiff2s_XA.device_init(0.f);
+        wdiff2s_XA_imag.device_alloc();
+		wdiff2s_XA_imag.device_init(0.f);
 
 		unsigned long AAXA_pos=0;
 
@@ -2876,10 +2879,10 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
             CTF new_ctf;
 						bool refine_ctf_with_torch = DIRECT_A1D_ELEM(baseMLO->mymodel.data_vs_prior_class[exp_iclass], int(baseMLO->mymodel.ori_size/5.3)) > 1.;
 						//refine ctf only when the angular sampling is less than 7.5 degree
-						refine_ctf_with_torch = refine_ctf_with_torch && (baseMLO->sampling.healpix_order > 2);
+						refine_ctf_with_torch = refine_ctf_with_torch && (baseMLO->sampling.healpix_order > 2) && sp.iclass_max - sp.iclass_min == 0;
             //std::cout << baseMLO->do_ctf_correction << " " << cudaMLO->dataIs3D << " " << sp.iclass_max - sp.iclass_min << std::endl;
 						
-            if(baseMLO->do_ctf_correction && !cudaMLO->dataIs3D && sp.iclass_max - sp.iclass_min == 0){
+            if(baseMLO->do_ctf_correction && !cudaMLO->dataIs3D ){
                 //note that AA, XA, sum are fftw centered
                 DEBUG_HANDLE_ERROR(cudaStreamSynchronize(cudaMLO->classStreams[exp_iclass]));
 								//start refining defocus parameters using libtorch lbfgs
@@ -3073,10 +3076,14 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 		{
 			if((baseMLO->mymodel.pdf_class[exp_iclass] == 0.) || (ProjectionData[ipart].class_entries[exp_iclass] == 0))
 				continue;
+            if(baseMLO->mymodel.do_beam_tilt_optimization)
+            {
+                for(long int j = 0; j < image_size; j++)
+                    DIRECT_MULTIDIM_ELEM(exp_wsum_ctf_image_reference_product[ipart], j) += wdiff2s_XA[AAXA_pos+j];
+            }
 			for (long int j = 0; j < image_size; j++)
 			{
-                DIRECT_MULTIDIM_ELEM(exp_wsum_ctf_image_reference_product[ipart], j) += wdiff2s_XA[AAXA_pos+j];
-				int ires = DIRECT_MULTIDIM_ELEM(baseMLO->Mresol_fine, j);
+                int ires = DIRECT_MULTIDIM_ELEM(baseMLO->Mresol_fine, j);
 				if (ires > -1 && baseMLO->do_scale_correction &&
 						DIRECT_A1D_ELEM(baseMLO->mymodel.data_vs_prior_class[exp_iclass], ires) > 0.167)
 				{
@@ -3158,7 +3165,36 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 			thr_wsum_signal_product_spectra[group_id] += exp_wsum_scale_correction_XA[ipart];
 			thr_wsum_reference_power_spectra[group_id] += exp_wsum_scale_correction_AA[ipart];
             if (baseMLO->mymodel.do_beam_tilt_optimization)
-                thr_wsum_ctf_image_reference_product[micrograph_id] += exp_wsum_ctf_image_reference_product[ipart];
+            {
+                //std::cout << "start accumulating beam tilt" << std::endl;
+                int found = -1;
+                for(int i_mic = 0; i_mic < thr_wsum_ctf_image_reference_product_indices.size(); i_mic++)
+                {
+                    if( thr_wsum_ctf_image_reference_product_indices[i_mic] == micrograph_id ) 
+                    {
+                        found = i_mic;
+                        break;
+                    }
+                }
+                if(found == -1) 
+                {
+                    thr_wsum_ctf_image_reference_product_indices.push_back(micrograph_id);
+                    thr_wsum_ctf_image_reference_product.push_back(exp_wsum_ctf_image_reference_product[ipart]);
+                } else
+                {
+                    thr_wsum_ctf_image_reference_product[found] += exp_wsum_ctf_image_reference_product[ipart];
+                }
+                // also set beamtilt parameters if not set
+                if (!baseMLO->mymodel.beam_tilts_parameters_set[micrograph_id])
+                {
+                    RFLOAT Cs = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_CS);
+		            RFLOAT kV = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_VOLTAGE);
+                    std::cout << "set beamtilts parameters: " << kV << " " << Cs << std::endl;
+                    baseMLO->mymodel.beam_tilts_parameters_set[micrograph_id] = true;
+                    baseMLO->mymodel.beam_tilts_parameters[micrograph_id].first = kV;
+                    baseMLO->mymodel.beam_tilts_parameters[micrograph_id].second = Cs;
+                }
+            }
             //let's get the bfactor for each particle here
             bool any_l = false;
             //for (int exp_iclass = sp.iclass_min; exp_iclass <= sp.iclass_max; exp_iclass++)
@@ -3257,10 +3293,14 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 				baseMLO->wsum_model.wsum_reference_power_spectra[n] += thr_wsum_reference_power_spectra[n];
             }
 		}
-        for (int n = 0; n < baseMLO->mymodel.nr_micrographs; n++)
+        if (baseMLO->mymodel.do_beam_tilt_optimization) 
         {
-            if (baseMLO->mymodel.do_beam_tilt_optimization)
-                baseMLO->wsum_model.wsum_ctf_image_reference_product[n] += thr_wsum_ctf_image_reference_product[n];
+            for(int i_mic = 0; i_mic < thr_wsum_ctf_image_reference_product_indices.size(); i_mic++)
+            {
+                int mic_id = thr_wsum_ctf_image_reference_product_indices[i_mic];
+                baseMLO->wsum_model.wsum_ctf_image_reference_product[mic_id] += 
+                    thr_wsum_ctf_image_reference_product[i_mic];
+            }
         }
 		for (int n = 0; n < baseMLO->mymodel.nr_classes; n++)
 		{

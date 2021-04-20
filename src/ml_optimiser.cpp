@@ -444,6 +444,9 @@ void MlOptimiser::parseInitial(int argc, char **argv)
     mymodel.tv_beta = textToFloat(parser.getOption("--tv_beta", "Regularisation parameter for tv norm", "0.1"));
     mymodel.tv_eps  = textToFloat(parser.getOption("--tv_eps", "eps value for l1 norm", "0.1"));
     mymodel.tv_epsp = textToFloat(parser.getOption("--tv_epsp", "eps value for tv norm", "0.1"));
+    //toggle on beam tilt optimization
+    mymodel.do_beam_tilt_optimization = parser.checkOption("--beamtilt_opt", "Performing beamtilt optimization");
+
 	mymodel.nr_classes = textToInteger(parser.getOption("--K", "Number of references to be refined", "1"));
     acceptance_ratio = textToDouble(parser.getOption("--acceptance_ratio", "The acceptance_ratio for sample random sampling", "1."));
     particle_diameter = textToFloat(parser.getOption("--particle_diameter", "Diameter of the circular mask that will be applied to the experimental images (in Angstroms)", "-1"));
@@ -3700,21 +3703,26 @@ void MlOptimiser::maximizationOtherParameters()
 	if (do_scale_correction && !((iter==1 && do_firstiter_cc) || do_always_cc) )
 	{
         //optimize  beamtilt
-        if(mymodel.do_beam_tilt_optimization)
+        if(mymodel.do_beam_tilt_optimization && sampling.healpix_order > 2)
+                //&& 5*mymodel.current_size > mymodel.ori_size)
         {
             for(int imic = 0; imic < mymodel.nr_micrographs; imic++)
             {
-                if (mymodel.beam_tilts_parameters_set[imic])
+                if (!mymodel.beam_tilts_parameters_set[imic])
                     std::cout <<  "WRONG! "  << imic << " is not set!" << std::endl;
-                RFLOAT beamtilt_x = mymodel.beam_tilts[imic].first;
-                RFLOAT beamtilt_y = mymodel.beam_tilts[imic].second;
-                RFLOAT V = 1000. * mymodel.beam_tilts_parameters[imic].first;
-                RFLOAT Cs = mymodel.beam_tilts_parameters[imic].second;
-                RFLOAT lambda = 12.2643247 / sqrt(V * (1. + V *  0.978466e-6));
-                OptimizeBeamTilt(wsum_model.wsum_ctf_image_reference_product[imic], beamtilt_x, beamtilt_y, 
-                        lambda, Cs, mymodel.pixel_size, mymodel.ori_size, 6.*float(mymodel.current_size)/float(mymodel.ori_size));
-                mymodel.beam_tilts[imic].first = beamtilt_x;
-                mymodel.beam_tilts[imic].second = beamtilt_y;
+                else 
+                {
+                    RFLOAT beamtilt_x = mymodel.beam_tilts[imic].first;
+                    RFLOAT beamtilt_y = mymodel.beam_tilts[imic].second;
+                    RFLOAT V = 1000. * mymodel.beam_tilts_parameters[imic].first;
+                    RFLOAT Cs = mymodel.beam_tilts_parameters[imic].second;
+                    RFLOAT lambda = 12.2643247 / sqrt(V * (1. + V *  0.978466e-6));
+                    RFLOAT corr = OptimizeBeamTilt(wsum_model.wsum_ctf_image_reference_product[imic], beamtilt_x, beamtilt_y, 
+                            lambda, Cs, mymodel.pixel_size, mymodel.ori_size, 6.*float(mymodel.current_size)/float(mymodel.ori_size));
+                    mymodel.beam_tilts[imic].first = beamtilt_x;
+                    mymodel.beam_tilts[imic].second = beamtilt_y;
+                    std::cout << "mic_no: " <<  imic << " beamtilt_x " << beamtilt_x << " beamtilt_y " << beamtilt_y << std::endl;
+                }
             }
         }
 		for (int igroup = 0; igroup < mymodel.nr_groups; igroup++)
@@ -8520,6 +8528,7 @@ void MlOptimiser::getMetaAndImageDataSubset(int first_ori_particle_id, int last_
                     //set micrograph defocus parameters for beam tilt if not set
                     if (!mymodel.beam_tilts_parameters_set[mic_id])
                     {
+                        //std::cout << "set beamtilts parameters: " << kV << " " << Cs << std::endl;
                         mymodel.beam_tilts_parameters_set[mic_id] = true;
                         mymodel.beam_tilts_parameters[mic_id].first = kV;
                         mymodel.beam_tilts_parameters[mic_id].second = Cs;

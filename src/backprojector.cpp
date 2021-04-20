@@ -793,10 +793,10 @@ void BackProjector::getDownsampledAverage(MultidimArray<Complex > &avg)
 	switch (ref_dim)
 	{
 	case 2:
-	   avg.initZeros(down_size, down_size / 2 + 1);
+	   avg.initZeros(down_size * 2/padding_factor, down_size / padding_factor + 1);
 	   break;
 	case 3:
-	   avg.initZeros(down_size, down_size, down_size / 2 + 1);
+	   avg.initZeros(down_size * 2/padding_factor, down_size * 2/padding_factor, down_size / padding_factor + 1);
 	   break;
 	default:
 	   REPORT_ERROR("BackProjector::getDownsampledAverage%%ERROR: Dimension of the data array should be 2 or 3");

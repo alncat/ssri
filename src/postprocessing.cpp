@@ -1217,7 +1217,7 @@ void Postprocessing::run()
 	int global_resol_i = 0;
 	FOR_ALL_DIRECT_ELEMENTS_IN_ARRAY1D(fsc_true)
 	{
-		if ( DIRECT_A1D_ELEM(fsc_true, i) < 0.2 )//0.143)
+		if ( DIRECT_A1D_ELEM(fsc_true, i) < 0.143)
 			break;
 		global_resol = XSIZE(I1())*angpix/(RFLOAT)i;
 		global_resol_i = i;

@@ -290,6 +290,7 @@ void runWavgKernel(
 		XFLOAT *wdiff2s_parts,
 		XFLOAT *wdiff2s_AA,
 		XFLOAT *wdiff2s_XA,
+        XFLOAT *wdiff2s_XA_imag,
 		OptimisationParamters &op,
 		long unsigned orientation_num,
 		long unsigned translation_num,

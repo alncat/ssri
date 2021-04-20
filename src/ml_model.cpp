@@ -657,6 +657,7 @@ void MlModel::readImages(FileName fn_ref, bool _is_3d_model, int _ori_size, Expe
 	// Set some stuff
 	nr_groups = _mydata.groups.size();
     nr_micrographs  =  _mydata.micrographs.size();
+    std::cout << "nr_micrographs: " << nr_micrographs << std::endl;
 	ori_size = _ori_size;
 	RFLOAT avg_norm_correction = 1.;
 
@@ -1023,6 +1024,7 @@ void MlWsumModel::initialise(MlModel &_model, FileName fn_sym, bool asymmetric_p
 	nr_classes = _model.nr_classes;
 	nr_bodies = _model.nr_bodies;
     nr_groups = _model.nr_groups;
+    nr_micrographs = _model.nr_micrographs;
     nr_directions = _model.nr_directions;
     ref_dim = _model.ref_dim;
     data_dim = _model.data_dim;
