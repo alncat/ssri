@@ -833,6 +833,8 @@ void MlOptimiser::read(FileName fn_in, int rank)
 
     // Then read in sampling, mydata and mymodel stuff
     // If do_preread_images: when not do_parallel_disc_io: only the master reads all images into RAM; otherwise: everyone reads in images into RAM
+    // only the slaves reads in images into RAM to save memory !!!
+    do_preread_images = do_preread_images && (rank != 0);
 #ifdef DEBUG_READ
     std::cerr<<"MlOptimiser::readStar before data."<<std::endl;
 #endif
@@ -1355,6 +1357,8 @@ void MlOptimiser::initialiseGeneral(int rank)
 	}
 
 	// If we are not continuing an old run, now read in the data and the reference images
+    // only the slaves needs to preread images
+    do_preread_images = do_preread_images && (rank != 0);
 	if (iter == 0)
 	{
 

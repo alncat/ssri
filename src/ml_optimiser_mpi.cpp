@@ -463,7 +463,7 @@ will still yield good performance and possibly a more stable execution. \n" << s
         masked_size += width_mask_edge;
         masked_size *= 2;
         std::cout << "masked_size: " << masked_size << std::endl;
-        initialise_model_optimizer(mymodel.ori_size, 64, 32, 1e-5, node->rank);
+        initialise_model_optimizer(mymodel.ori_size, masked_size, 64, 64, 1e-4, node->rank);
     }
 
     initialiseWorkLoad();
@@ -573,6 +573,7 @@ void MlOptimiserMpi::initialiseWorkLoad()
     	REPORT_ERROR("MlOptimiserMpi::initialiseWorkLoad: at least 3 MPI processes are required when splitting data into random halves");
     else if(node->size <= 1)
     	REPORT_ERROR("MlOptimiserMpi::initialiseWorkLoad: at least 2 MPI processes are required, otherwise use the sequential program");
+    std::cout << "node " << node->rank << ", do_preread_images: " << do_preread_images << std::endl;
 
 	// Get the same random number generator seed for all mpi nodes
 	if (random_seed == -1)
@@ -1926,7 +1927,7 @@ void MlOptimiserMpi::maximization()
     if(do_gpu && cudaDevices.size() && !node->isMaster()){
         //int dev = node->rank % cudaDevices.size();
         int dev = 0;
-        std::cout << node->rank << " assigned to device " << cudaDevices[dev] << " and " << do_parallel_disc_io << " " << do_sequential_halves_recons << std::endl;
+        std::cout << "node: " << node->rank << " assigned to device " << cudaDevices[dev] << " and do_parallel_disc_io " << do_parallel_disc_io << " do_sequential_halves_recons " << do_sequential_halves_recons << std::endl;
         MlDeviceBundle * b = new MlDeviceBundle(this);
         b->setDevice(cudaDevices[dev]);
         //b->setStream();

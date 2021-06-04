@@ -1000,7 +1000,7 @@ RFLOAT BeamTiltGradHess(MultidimArray<Complex > &Fimg, RFLOAT beamtilt_x, RFLOAT
 		RFLOAT wavelength, RFLOAT Cs, RFLOAT angpix, int ori_size, RFLOAT& grad_bx, RFLOAT& grad_by, 
         RFLOAT& hess_x, RFLOAT& hess_y, RFLOAT& hess_xy);
 
-void OptimizeBeamTilt(MultidimArray<Complex> &Fimg, RFLOAT& beamtilt_x, RFLOAT& beamtilt_y,
+RFLOAT OptimizeBeamTilt(MultidimArray<Complex> &Fimg, RFLOAT& beamtilt_x, RFLOAT& beamtilt_y,
         RFLOAT wavelength, RFLOAT Cs, RFLOAT angpix, int ori_size, int iterations);
 
 void padAndFloat2DMap(const MultidimArray<RFLOAT > &v, MultidimArray<RFLOAT> &out, int factor = 2);

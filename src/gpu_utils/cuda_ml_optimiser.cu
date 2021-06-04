@@ -2096,7 +2096,7 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 	std::vector<MultidimArray<RFLOAT> > thr_wsum_signal_product_spectra, thr_wsum_reference_power_spectra;
     std::vector<MultidimArray<Complex>> thr_wsum_ctf_image_reference_product;
     std::vector<MultidimArray<Complex>> exp_wsum_ctf_image_reference_product;
-    std::vector<int>                       thr_wsum_ctf_image_reference_product_indices;
+    std::vector<int>                    thr_wsum_ctf_image_reference_product_indices;
 	exp_wsum_norm_correction.resize(sp.nr_particles, 0.);
     exp_AA.resize(sp.nr_particles, 0.);
     exp_XX.resize(sp.nr_particles, 0.);
@@ -2827,6 +2827,7 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 					~wdiff2s_sum,
 					&wdiff2s_AA(AAXA_pos),
 					&wdiff2s_XA(AAXA_pos),
+                    &wdiff2s_XA_imag(AAXA_pos),
 					op,
 					orientation_num,
 					translation_num,
@@ -2839,7 +2840,8 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 					cudaMLO->dataIs3D,
 					cudaMLO->classStreams[exp_iclass],
 					true, //refine_ctf,
-					false); //save_proj
+					true,//save_proj
+                    baseMLO->mymodel.do_beam_tilt_optimization); //refine beamtilt
             //get the difference between projection and real image
             //w(x - pv)
             //pass it to vae and get a reconstrcuted difference
@@ -2848,7 +2850,7 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
             //divide the major_projection by total weight to get normalized projection
             //create a tensor to hold the projections
             DEBUG_HANDLE_ERROR(cudaStreamSynchronize(cudaMLO->classStreams[exp_iclass]));
-						int i_cls = exp_iclass - sp.iclass_min;
+            int i_cls = exp_iclass - sp.iclass_min;
 						
             major_projections[i_cls]->cp_to_host();
             //major_projections[exp_iclass - sp.iclass_min]->streamSync();
@@ -2863,105 +2865,107 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 						//remember image at zero is reserved for ctf refinement, but so when major_weights[icls] size
 						//is 1, we will only refine ctf
             for(int t_i = 0; t_i < major_weights[i_cls].size(); t_i++) {
-							getRealRefProjPair(cudaMLO, major_projections[i_cls], major_images[i_cls],
-																 real_projections, real_images, image_size,  major_weights[i_cls][t_i],
-																 projKernel, t_i, part_id == 1688);
-              
+                getRealRefProjPair(cudaMLO, major_projections[i_cls], major_images[i_cls],
+                        real_projections, real_images, image_size,  major_weights[i_cls][t_i],
+                        projKernel, t_i, part_id == 1688);
+
             }
             //pass to auto encoder
-            if(DIRECT_A1D_ELEM(baseMLO->mymodel.data_vs_prior_class[exp_iclass], int(baseMLO->mymodel.ori_size/2.8)) > 1.){
+            if(DIRECT_A1D_ELEM(baseMLO->mymodel.data_vs_prior_class[exp_iclass], int(baseMLO->mymodel.ori_size/6)) > 1.){
                 pthread_mutex_lock(&global_mutex);
-                train_a_batch(real_images, part_id);
+                train_unet(real_projections, real_images, major_weights[i_cls], part_id);
                 pthread_mutex_unlock(&global_mutex);
             }
 
             //update ctf per particle,
             CTF new_ctf;
-						bool refine_ctf_with_torch = DIRECT_A1D_ELEM(baseMLO->mymodel.data_vs_prior_class[exp_iclass], int(baseMLO->mymodel.ori_size/5.3)) > 1.;
-						//refine ctf only when the angular sampling is less than 7.5 degree
-						refine_ctf_with_torch = refine_ctf_with_torch && (baseMLO->sampling.healpix_order > 2) && sp.iclass_max - sp.iclass_min == 0;
+            bool refine_ctf_with_torch = DIRECT_A1D_ELEM(baseMLO->mymodel.data_vs_prior_class[exp_iclass], int(baseMLO->mymodel.ori_size/5.3)) > 1.;
+            //refine ctf only when the angular sampling is less than 7.5 degree
+            refine_ctf_with_torch = refine_ctf_with_torch && (baseMLO->sampling.healpix_order > 2) && sp.iclass_max - sp.iclass_min == 0;
             //std::cout << baseMLO->do_ctf_correction << " " << cudaMLO->dataIs3D << " " << sp.iclass_max - sp.iclass_min << std::endl;
-						
+
             if(baseMLO->do_ctf_correction && !cudaMLO->dataIs3D ){
                 //note that AA, XA, sum are fftw centered
                 DEBUG_HANDLE_ERROR(cudaStreamSynchronize(cudaMLO->classStreams[exp_iclass]));
-								//start refining defocus parameters using libtorch lbfgs
-								if(!refine_ctf_with_torch && false){
-									//read defocus parameters									
-									float defocus_u = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_U);
-                  float defocus_v = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_V);
-                  float defocus_a = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_ANGLE);
-									//convert angle to radian
-									defocus_a = DEG2RAD(defocus_a);
-									//using new_ctf to calculate ks and q0
-									new_ctf.setValues(defocus_u,
-																		defocus_v,
-																		RAD2DEG(defocus_a),
-																		DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_VOLTAGE),
-																		DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_CS),
-																		DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_Q0),
-																		DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_BFAC),
-																		1.,
-																		DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_PHASE_SHIFT));
-									std::vector<float> Ks;
-									float Q0;
-									new_ctf.getKsQ0(Ks, Q0);
-									
-									//use 100 angstrom as default restraint, real_projections is data, real_images is reference to be
-									//matched against
-                                    pthread_mutex_lock(&global_mutex);
-									optimize_ctf(real_projections, real_images, defocus_u, defocus_v, defocus_a, 100,
-															 Ks, Q0, baseMLO->mymodel.ori_size, baseMLO->mymodel.pixel_size, true);
-                                    pthread_mutex_unlock(&global_mutex);
+                //start refining defocus parameters using libtorch lbfgs
+                if(!refine_ctf_with_torch && false){
+                    //read defocus parameters									
+                    float defocus_u = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_U);
+                    float defocus_v = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_V);
+                    float defocus_a = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_ANGLE);
+                    //convert angle to radian
+                    defocus_a = DEG2RAD(defocus_a);
+                    //using new_ctf to calculate ks and q0
+                    new_ctf.setValues(defocus_u,
+                            defocus_v,
+                            RAD2DEG(defocus_a),
+                            DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_VOLTAGE),
+                            DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_CS),
+                            DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_Q0),
+                            DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_BFAC),
+                            1.,
+                            DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_PHASE_SHIFT));
+                    std::vector<float> Ks;
+                    float Q0;
+                    new_ctf.getKsQ0(Ks, Q0);
 
-									//update ctf parameters in new_ctf
-									new_ctf.setValues(defocus_u,
-																		defocus_v,
-																		RAD2DEG(defocus_a),//DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_ANGLE),
-																		DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_VOLTAGE),
-																		DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_CS),
-																		DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_Q0),
-																		DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_BFAC),
-																		1.,
-																		DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_PHASE_SHIFT));
-								}
-								
-								//copy these arrays to cpu
+                    //use 100 angstrom as default restraint, real_projections is data, real_images is reference to be
+                    //matched against
+                    pthread_mutex_lock(&global_mutex);
+                    optimize_ctf(real_projections, real_images, defocus_u, defocus_v, defocus_a, 100,
+                            Ks, Q0, baseMLO->mymodel.ori_size, baseMLO->mymodel.pixel_size, true);
+                    pthread_mutex_unlock(&global_mutex);
+
+                    //update ctf parameters in new_ctf
+                    new_ctf.setValues(defocus_u,
+                            defocus_v,
+                            RAD2DEG(defocus_a),//DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_ANGLE),
+                            DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_VOLTAGE),
+                            DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_CS),
+                            DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_Q0),
+                            DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_BFAC),
+                            1.,
+                            DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_PHASE_SHIFT));
+                }
+
+                //copy these arrays to cpu
                 wdiff2s_AA.cp_to_host();
-								wdiff2s_XA.cp_to_host();
+                wdiff2s_XA.cp_to_host();
+                wdiff2s_XA_imag.cp_to_host();
                 wdiff2s_sum.cp_to_host();
                 wdiff2s_AA.streamSync();
-								//another ctf parameter refinement method using wdiff2s_xa.
-								if(refine_ctf_with_torch)
-									{
-                                        refineCTFNewton(new_ctf, baseMLO, op, ipart, image_size, wdiff2s_AA, wdiff2s_XA, true, false);
+                //another ctf parameter refinement method using wdiff2s_xa.
+                if(refine_ctf_with_torch)
+                {
+                    refineCTFNewton(new_ctf, baseMLO, op, ipart, image_size, wdiff2s_AA, wdiff2s_XA, true, false);
 
-                                        //update defocus
-                                        DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_U) = new_ctf.DeltafU;
-                                        DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_V) = new_ctf.DeltafV;
-                                        //refine angle in second round
-                                        refineCTFNewton(new_ctf, baseMLO, op, ipart, image_size, wdiff2s_AA, wdiff2s_XA, false, true);
+                    //update defocus
+                    DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_U) = new_ctf.DeltafU;
+                    DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_V) = new_ctf.DeltafV;
+                    //refine angle in second round
+                    refineCTFNewton(new_ctf, baseMLO, op, ipart, image_size, wdiff2s_AA, wdiff2s_XA, false, true);
 
-									}
+                }
 
-								//if(DIRECT_A1D_ELEM(baseMLO->mymodel.data_vs_prior_class[exp_iclass], int(baseMLO->mymodel.ori_size/5.3)) > 1.){//6))>1.){//4.4) > 1.){
-								if(refine_ctf_with_torch)
-									{
+                //if(DIRECT_A1D_ELEM(baseMLO->mymodel.data_vs_prior_class[exp_iclass], int(baseMLO->mymodel.ori_size/5.3)) > 1.){//6))>1.){//4.4) > 1.){
+                if(refine_ctf_with_torch)
+                {
                     MultidimArray<RFLOAT> Fctf;
-										Fctf.resize(op.Fctfs[ipart]);
+                    Fctf.resize(op.Fctfs[ipart]);
                     //calculate Fctf for computing diff2s*
                     new_ctf.getFftwImage(Fctf, baseMLO->mymodel.ori_size, baseMLO->mymodel.ori_size, baseMLO->mymodel.pixel_size,
-                                baseMLO->ctf_phase_flipped, baseMLO->only_flip_phases, baseMLO->intact_ctf_first_peak, true);
-										for (long int j = 0; j < image_size; j++)
-											{
-												ctfs[j] = (XFLOAT) Fctf.data[j]*part_scale;
-											}
-                    
+                            baseMLO->ctf_phase_flipped, baseMLO->only_flip_phases, baseMLO->intact_ctf_first_peak, true);
+                    for (long int j = 0; j < image_size; j++)
+                    {
+                        ctfs[j] = (XFLOAT) Fctf.data[j]*part_scale;
+                    }
+
                     //only update ctf when correlation improved
                     if(true) {//correlation > old_correlation) {
                         for (long int j = 0; j < image_size; j++){
                             wdiff2s_AA[j] *= Fctf.data[j]*Fctf.data[j];
                             wdiff2s_XA[j] *= Fctf.data[j];
+                            wdiff2s_XA_imag[j] *= Fctf.data[j];
                             exp_AA[ipart] += wdiff2s_AA[j];
                             exp_XX[ipart] += wdiff2s_sum[j];
                             //RFLOAT tmp = wdiff2s_sum[j];
@@ -2971,11 +2975,11 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
                         }
                         //std::cout << "diff_corr :" << (correlation - old_correlation)/correlation << std::endl;
 
-												//copy ctfs to gpu for backprojection
+                        //copy ctfs to gpu for backprojection
                         ctfs.cp_to_device();
                         ctfs.streamSync();
-												
-												//persist ctf parameters
+
+                        //persist ctf parameters
                         DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_U) = new_ctf.DeltafU;
                         DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_V) = new_ctf.DeltafV;
                         DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_ANGLE) = new_ctf.azimuthal_angle;
@@ -2983,6 +2987,7 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
                         for (long int j = 0; j < image_size; j++){
                             wdiff2s_AA[j] *= op.Fctfs[ipart].data[j]*op.Fctfs[ipart].data[j];
                             wdiff2s_XA[j] *= op.Fctfs[ipart].data[j];
+                            wdiff2s_XA_imag[j] *= op.Fctfs[ipart].data[j];
                             exp_AA[ipart] += wdiff2s_AA[j];
                             exp_XX[ipart] += wdiff2s_sum[j];
                             //RFLOAT tmp = wdiff2s_sum[j];
@@ -2991,21 +2996,21 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
                             //wdiff2s_XA[j] = fabs(wdiff2s_XA[j]);//tmp;
                         }
                     }
-                }//toggle on ctf refinement when refinement stabilized
-                //directly multiply AA and XA with ctf;
-                else {
-                    for (long int j = 0; j < image_size; j++){
-                        wdiff2s_AA[j] *= op.Fctfs[ipart].data[j]*op.Fctfs[ipart].data[j];
-                        wdiff2s_XA[j] *= op.Fctfs[ipart].data[j];
-                        exp_AA[ipart] += wdiff2s_AA[j];
-                        exp_XX[ipart] += wdiff2s_sum[j];
-                        //RFLOAT tmp = wdiff2s_sum[j];
-                        wdiff2s_sum[j] = wdiff2s_sum[j] - 2.*wdiff2s_XA[j] + wdiff2s_AA[j];
-                        //DIRECT_MULTIDIM_ELEM(exp_wsum_ctf_image_reference_product[ipart], j) += wdiff2s_XA[j];
-                        //wdiff2s_XA[j] = fabs(wdiff2s_XA[j]);//tmp;
+                    }//toggle on ctf refinement when refinement stabilized
+                    //directly multiply AA and XA with ctf;
+                    else {
+                        for (long int j = 0; j < image_size; j++){
+                            wdiff2s_AA[j] *= op.Fctfs[ipart].data[j]*op.Fctfs[ipart].data[j];
+                            wdiff2s_XA[j] *= op.Fctfs[ipart].data[j];
+                            exp_AA[ipart] += wdiff2s_AA[j];
+                            exp_XX[ipart] += wdiff2s_sum[j];
+                            //RFLOAT tmp = wdiff2s_sum[j];
+                            wdiff2s_sum[j] = wdiff2s_sum[j] - 2.*wdiff2s_XA[j] + wdiff2s_AA[j];
+                            //DIRECT_MULTIDIM_ELEM(exp_wsum_ctf_image_reference_product[ipart], j) += wdiff2s_XA[j];
+                            //wdiff2s_XA[j] = fabs(wdiff2s_XA[j]);//tmp;
+                        }
                     }
                 }
-            }
 
             //multiply AA and XA with ctf
 
@@ -3079,7 +3084,10 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
             if(baseMLO->mymodel.do_beam_tilt_optimization)
             {
                 for(long int j = 0; j < image_size; j++)
-                    DIRECT_MULTIDIM_ELEM(exp_wsum_ctf_image_reference_product[ipart], j) += wdiff2s_XA[AAXA_pos+j];
+                {
+                    DIRECT_MULTIDIM_ELEM(exp_wsum_ctf_image_reference_product[ipart], j).real += wdiff2s_XA[AAXA_pos+j];
+                    DIRECT_MULTIDIM_ELEM(exp_wsum_ctf_image_reference_product[ipart], j).imag += wdiff2s_XA_imag[AAXA_pos+j];
+                }
             }
 			for (long int j = 0; j < image_size; j++)
 			{
@@ -3821,6 +3829,10 @@ void MlOptimiserCuda::doThreadExpectationSomeParticles(int thread_id)
 #endif
 }
 
+void getFourierTransform(MlOptimiserCuda* cudaMLO, std::vector<float>& image)
+{
+}
+
 void getRealRefProjPair(MlOptimiserCuda* cudaMLO, std::unique_ptr<CudaGlobalPtr<XFLOAT>>& major_projection,
 												std::unique_ptr<CudaGlobalPtr<XFLOAT>>& major_image,
 												std::vector<float>& real_projections, std::vector<float>& real_images, int image_size, float weight,
@@ -3870,22 +3882,22 @@ void getRealRefProjPair(MlOptimiserCuda* cudaMLO, std::unique_ptr<CudaGlobalPtr<
 	cudaMLO->transformer2.backward();
 	cudaMLO->transformer2.reals.streamSync();
 	////center reals
-	runCenterFFT(
-							 cudaMLO->transformer1.reals,
-							 (int)cudaMLO->transformer1.xSize,
-							 (int)cudaMLO->transformer1.ySize,
-							 (int)cudaMLO->transformer1.zSize,
-							 false
-							 );
-	cudaMLO->transformer1.reals.cp_to_host();
-	//cudaMLO->transformer1.reals.streamSync();
-	runCenterFFT(
-							 cudaMLO->transformer2.reals,
-							 (int)cudaMLO->transformer2.xSize,
-							 (int)cudaMLO->transformer2.ySize,
-							 (int)cudaMLO->transformer2.zSize,
-							 false
-							 );
+    runCenterFFT(
+            cudaMLO->transformer1.reals,
+            (int)cudaMLO->transformer1.xSize,
+            (int)cudaMLO->transformer1.ySize,
+            (int)cudaMLO->transformer1.zSize,
+            false
+            );
+    cudaMLO->transformer1.reals.cp_to_host();
+    //cudaMLO->transformer1.reals.streamSync();
+    runCenterFFT(
+            cudaMLO->transformer2.reals,
+            (int)cudaMLO->transformer2.xSize,
+            (int)cudaMLO->transformer2.ySize,
+            (int)cudaMLO->transformer2.zSize,
+            false
+            );
 	cudaMLO->transformer2.reals.cp_to_host();
 	cudaMLO->transformer2.reals.streamSync();
 	////copy to projection

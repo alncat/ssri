@@ -4,7 +4,7 @@
 #include "api.h"
 #include "src/image.h"
 //convolution size: (input_size + 2*padding - kernel_size)/stride + 1
-//convolution transpose size: (input_size - 1)*stride - 2*padding + (kernel_size - 1) + 1
+//convolution transpose size: (input_size - 1)*stride + output_padding - 2*padding + (kernel_size - 1) + 1
 
 VAEImpl::VAEImpl(int64_t h_dim, int64_t output1, int64_t output2, int64_t output3, int64_t output4, int64_t z_dim)
     : fc1(output4*9, z_dim),
@@ -98,7 +98,7 @@ VAEOutput VAEImpl::forward(torch::Tensor x) {
 
 static std::unique_ptr<VAE> vae_model;
 static std::unique_ptr<CUNet2d> unet_model;
-static std::unique_ptr<torch::optim::Adam> vae_optimizer;
+static std::unique_ptr<torch::optim::AdamW> vae_optimizer;
 static int vae_index = 0;
 static int vae_image_size;
 static int vae_mask_size;
@@ -107,9 +107,9 @@ static int vae_rank = 0;
 void initialise_model_optimizer(int image_size, int h_dim, int z_dim, float learning_rate, int rank){
     vae_image_size = image_size;
     vae_model = std::make_unique<VAE>(1, 32, 32, 64, 64, z_dim);
-    torch::Device device(torch::kCPU);
+    torch::Device device(torch::kCUDA, 0);
     (*vae_model)->to(device);
-    vae_optimizer = std::make_unique<torch::optim::Adam>((*vae_model)->parameters(), torch::optim::AdamOptions(learning_rate));
+    vae_optimizer = std::make_unique<torch::optim::AdamW>((*vae_model)->parameters(), torch::optim::AdamWOptions(learning_rate));
     vae_rank = rank;
 }
 
@@ -117,10 +117,14 @@ void initialise_model_optimizer(int image_size, int mask_size, int h_dim, int ou
     vae_image_size = image_size;
     vae_mask_size = mask_size;
     unet_model = std::make_unique<CUNet2d>(2, out_channels, mask_size);
-    torch::Device device(torch::kCPU);
+    torch::Device device(torch::kCUDA, 0);
     (*unet_model)->to(device);
-    vae_optimizer = std::make_unique<torch::optim::Adam>((*unet_model)->parameters(), torch::optim::AdamOptions(learning_rate));
+    vae_optimizer = std::make_unique<torch::optim::AdamW>((*unet_model)->parameters(), torch::optim::AdamWOptions(learning_rate));
     vae_rank = rank;
+    if(false){
+        torch::load(*unet_model, "model"+std::to_string(vae_rank)+".pt");
+        torch::load(*vae_optimizer, "optimizer"+std::to_string(vae_rank)+".pt");
+    }
 }
 
 int train_a_batch(std::vector<float> &data, int part_id){
@@ -174,36 +178,54 @@ int train_a_batch(std::vector<float> &data, int part_id){
 
 }
 
-int train_unet(std::vector<float> &data, std::vector<float> &target, int part_id){
-    torch::set_num_threads(20);
+int train_unet(std::vector<float> &data, std::vector<float> &target, std::vector<float>& weight, int part_id, std::vector<float> &wrapped_output){
+    torch::set_num_threads(15);
     (*unet_model)->train();
+    torch::Device device(torch::kCUDA, 0);
     auto options = torch::TensorOptions().dtype(torch::kFloat32);
     int batch_num = data.size()/(vae_image_size*vae_image_size);
+    //std::cout << "batch_num: " << batch_num << std::endl;
     std::vector<long int> dimensions = {batch_num, 1, vae_image_size, vae_image_size};
+    std::vector<long int> w_dims = {batch_num};
     torch::Tensor torch_real_projections = torch::from_blob(data.data(), c10::ArrayRef<long int>(dimensions), options);
     torch::Tensor torch_target = torch::from_blob(target.data(), c10::ArrayRef<long int>(dimensions), options);
+    torch::Tensor torch_weight = torch::from_blob(weight.data(), c10::ArrayRef<long int>(w_dims), options);
     int start_dim = vae_image_size/2 - vae_mask_size/2;
     int end_pad = vae_image_size - (start_dim + vae_mask_size);
     //crop image
     torch_real_projections = torch_real_projections.slice(2, start_dim, start_dim + vae_mask_size);
     torch_real_projections = torch_real_projections.slice(3, start_dim, start_dim + vae_mask_size);
+    //torch_real_projections.print();
     torch_target = torch_target.slice(2, start_dim, start_dim + vae_mask_size);
     torch_target = torch_target.slice(3, start_dim, start_dim + vae_mask_size);
-    auto stacked_input = torch::stack({torch_real_projections, torch_target}, 1);
+    //torch_target.print();
+    torch_real_projections = torch_real_projections.to(device);
+    torch_target = torch_target.to(device);
+    torch_weight = torch_weight.to(device);
+    auto stacked_input = torch::cat({torch_real_projections, torch_target}, 1);
+    //auto gpu_input = stacked_input.to(device);
     //auto data_mean = torch::mean(torch_real_projections, {1,2,3}, true, true);
     //auto data_std = std::get<0>(data_std_mean);
     //auto data_mean = std::get<1>(data_std_mean);
     //std::cout << data_std << std::endl;
     //torch_real_projections = (torch_real_projections - data_mean)/(data_std + 1e-4);
-    auto flow = (*(unet_model))->forward(stacked_input);
+    //(*unet_model)->toggleShowSizes();
+    auto flows = (*(unet_model))->forward(stacked_input);
+    auto flow = flows.first;
+    //flow = flow.to(torch::kCPU);
+    
     //warp data to target
-    auto output = torch::nn::functional::grid_sample(torch_real_projections, flow);
+    auto output = torch::nn::functional::grid_sample(torch_target, flow, torch::nn::functional::GridSampleFuncOptions().
+            mode(torch::kBilinear).padding_mode(torch::kZeros).align_corners(true));
     //compute correlation
     //auto reconstruction_loss = torch::nn::functional::mse_loss(output, torch_real_projections, torch::nn::functional::MSELossFuncOptions().reduction(torch::kSum));
     //auto reconstruction_loss = torch::nn::functional::cosine_similarity(output, torch_target, torch::nn::functional::CosineSimilarityFuncOptions().dim(0));
+    //std::cout << "compute cross correlation!" << std::endl;
     torch::Tensor cc;
+    torch::Tensor tv_x;
+    torch::Tensor tv_y;
     if(true){
-        auto sum_filt = torch::ones({1, 1, 9, 9});
+        auto sum_filt = torch::ones({1, 1, 9, 9}).to(device);
         auto I2 = torch_real_projections*torch_real_projections;
         auto J2 = output * output;
         auto IJ = torch_real_projections*output;
@@ -217,42 +239,62 @@ int train_unet(std::vector<float> &data, std::vector<float> &target, int part_id
         auto cross = IJ_sum - uJ * I_sum - uI * J_sum + uI * uJ * 81.;
         auto I_var = I2_sum - 2 * uI * I_sum + uI * uI * 81.;
         auto J_var = J2_sum - 2 * uJ * J_sum + uJ * uJ * 81.;
-        auto cc = cross * cross / (I_var * J_var + 1e-5);
+        cc = cross * cross / (I_var * J_var + 1e-5);
     }
+    //cc *= torch_weight;
+    if(true){
+        auto tmp_flow = flows.second;
+        //tmp_flow.print();
+        tv_x = tmp_flow.slice(2, 0, vae_mask_size - 1) - tmp_flow.slice(2, 1, vae_mask_size);
+        //dx.print();
+        tv_y = tmp_flow.slice(3, 0, vae_mask_size - 1) - tmp_flow.slice(3, 1, vae_mask_size);
+    }
+    //std::cout << "computed cross correlation!" << std::endl;
 
-    auto reconstruction_loss = -torch::mean(cc);
-    auto loss = reconstruction_loss;
+    auto reconstruction_loss = -torch::mean(torch::mean(cc, {1,2,3})*torch_weight);
+    auto tv_loss = 0.05*torch::mean((torch::mean(torch::abs(tv_x), {1,2,3}) + 
+                                    torch::mean(torch::abs(tv_y), {1,2,3}))
+                                    *torch_weight);
+    auto loss = reconstruction_loss + tv_loss;
     //padding output wrapped image
-    auto padded_output = torch::nn::functional::pad(output, torch::nn::functional::PadFuncOptions({start_dim, end_pad, start_dim, end_pad}).mode(torch::kConstant));
+    //auto padded_output = torch::nn::functional::pad(output, torch::nn::functional::PadFuncOptions({start_dim, end_pad, start_dim, end_pad}).mode(torch::kConstant));
     if(vae_index == 0) vae_optimizer->zero_grad();
     loss.backward();
-    if(vae_index != 0 && vae_index %50 == 0) {
+    if(vae_index != 0 && vae_index %25 == 0) {
         vae_optimizer->step();
         vae_optimizer->zero_grad();
     }
     vae_index++;
     //save some reconstructions here
-    if(vae_index % 1000 == 0){
+    if(vae_index % 2000 == 0){
         //std::cout << "Epoch [" << epoch + 1 << "/" << num_epochs << "], Step [" << batch_index + 1 << "/"
-        std::cout << vae_index << "/"
+        std::cout << "rank: " << vae_rank << " " << vae_index << "/"
             << "Reconstruction loss: "
-            << reconstruction_loss.item<double>() / torch_real_projections.size(0)
+            << reconstruction_loss.item<double>()
+            << " TV loss: " << tv_loss.item<double>()
+            << " weights: " << torch_weight
             << std::endl;
     }
     if(vae_index % 10000 == 0){
         //save model
         std::string model_path = "model" + std::to_string(vae_rank) + ".pt";
         torch::save(*unet_model, model_path);
+        std::string optimizer_path = "optimizer" + std::to_string(vae_rank) + ".pt";
+        torch::save(*vae_optimizer, optimizer_path);
     }
     if(vae_index % 5000 == 0){
         //save images
-        auto input_image = torch_real_projections.index({0});
-        Image<float> debug_img(vae_image_size, vae_image_size);
-        memcpy(debug_img.data.data, input_image.data_ptr<float>(), input_image.numel()*sizeof(float));
-        debug_img.write("tmp"+std::to_string(vae_rank)+"/input"+std::to_string(part_id)+".mrc");
-        auto output_image =output.index({0});
-        memcpy(debug_img.data.data, output_image.data_ptr<float>(), output_image.numel()*sizeof(float));
-        debug_img.write("tmp"+std::to_string(vae_rank)+"/output"+std::to_string(part_id)+".mrc");
+        torch::save(torch_target.to(torch::kCPU), "tmp"+std::to_string(vae_rank)+"/input"+std::to_string(part_id)+".pt");
+        torch::save(torch_real_projections.to(torch::kCPU), "tmp"+std::to_string(vae_rank)+"/proj"+std::to_string(part_id)+".pt");
+        torch::save(output.to(torch::kCPU), "tmp"+std::to_string(vae_rank)+"/output"+std::to_string(part_id)+".pt");
+        torch::save(flows.second.to(torch::kCPU), "tmp"+std::to_string(vae_rank)+"/flow"+std::to_string(part_id)+".pt");
+        //auto input_image = torch_target.index({0});
+        //Image<float> debug_img(vae_mask_size, vae_mask_size);
+        //memcpy(debug_img.data.data, input_image.data_ptr<float>(), input_image.numel()*sizeof(float));
+        //debug_img.write("tmp"+std::to_string(vae_rank)+"/input"+std::to_string(part_id)+".mrc");
+        //auto output_image =output.index({0});
+        //memcpy(debug_img.data.data, output_image.data_ptr<float>(), output_image.numel()*sizeof(float));
+        //debug_img.write("tmp"+std::to_string(vae_rank)+"/output"+std::to_string(part_id)+".mrc");
     }
 
 }

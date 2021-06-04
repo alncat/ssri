@@ -269,7 +269,9 @@ __global__ void cuda_kernel_wavg(
             XFLOAT imag_diff = 0.;
             XFLOAT tot_weight = 0.;
             XFLOAT t_ctf = __ldg(&g_ctfs[pixel]);
-            t_ctf /= part_scale;
+            t_ctf = t_ctf/part_scale;
+            //if(fabs(t_ctf) < 1e-5) t_ctf = 0.;
+            //else t_ctf = 1./t_ctf;
 
 			for (unsigned long itrans = 0; itrans < translation_num; itrans++)
 			{
@@ -304,20 +306,21 @@ __global__ void cuda_kernel_wavg(
             int ori_idx = __float2int_rd(g_ori_idx[bid]);
             if(ori_idx >= 0){
                 //store projection to ori_idx
-							ori_idx += 1;
+                ori_idx += 1;
                 g_ori_proj[2*(ori_idx*image_size + pixel)] = ref_real*t_ctf*tot_weight;
                 g_ori_proj[2*(ori_idx*image_size + pixel) + 1] = ref_imag*t_ctf*tot_weight;
+                //deconvolution
                 g_ori_image[2*(ori_idx*image_size + pixel)] = real_diff;
                 g_ori_image[2*(ori_idx*image_size + pixel) + 1] = imag_diff;
             }
-							}
-						if(refine_ctf)
-						{
-						cuda_atomic_add(&g_ori_proj[2*pixel], ref_real*tot_weight);
-						cuda_atomic_add(&g_ori_proj[2*pixel + 1], ref_imag*tot_weight);
-						cuda_atomic_add(&g_ori_image[2*pixel], real_diff);
-						cuda_atomic_add(&g_ori_image[2*pixel + 1], imag_diff);
-						}
+                            }
+                        if(refine_ctf)
+                        {
+                            cuda_atomic_add(&g_ori_proj[2*pixel], ref_real*tot_weight*t_ctf);
+                            cuda_atomic_add(&g_ori_proj[2*pixel + 1], ref_imag*tot_weight*t_ctf);
+                            cuda_atomic_add(&g_ori_image[2*pixel], real_diff);
+                            cuda_atomic_add(&g_ori_image[2*pixel + 1], imag_diff);
+                        }
 			cuda_atomic_add(&g_wdiff2s_XA[pixel], s_sumXA[tid]);
 			cuda_atomic_add(&g_wdiff2s_AA[pixel], s_sumA2[tid]);
 			cuda_atomic_add(&g_wdiff2s_parts[pixel], s_wdiff2s_parts[tid]);
@@ -360,8 +363,8 @@ __global__ void cuda_kernel_wavg(
 	unsigned pass_num(ceilfracf(image_size,block_sz)),pixel;
 	XFLOAT * s_wdiff2s_parts	= &buffer[0];
 	XFLOAT * s_sumXA			= &buffer[block_sz];
-    XFLOAT * s_sumXA_imag       = &buffer[3*block_sz];
-	XFLOAT * s_sumA2			= &buffer[2*block_sz];
+    XFLOAT * s_sumXA_imag       = &buffer[2*block_sz];
+	XFLOAT * s_sumA2			= &buffer[3*block_sz];
 	XFLOAT * s_eulers           = &buffer[4*block_sz];
 
 	if (tid < 9)

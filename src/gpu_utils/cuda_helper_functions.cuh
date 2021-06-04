@@ -93,6 +93,7 @@ void runWavgKernel(
 		XFLOAT *wdiff2s_parts,
 		XFLOAT *wdiff2s_AA,
 		XFLOAT *wdiff2s_XA,
+        XFLOAT *wdiff2s_XA_imag,
 		OptimisationParamters &op,
 		long unsigned orientation_num,
 		long unsigned translation_num,
@@ -105,7 +106,8 @@ void runWavgKernel(
 		bool data_is_3D,
 		cudaStream_t stream,
 		bool refine_ctf,
-		bool save_proj);
+		bool save_proj,
+        bool refine_beam_tilt);
 
 void runBackProjectKernel(
 		CudaBackprojector &BP,

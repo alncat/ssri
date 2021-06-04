@@ -1392,17 +1392,18 @@ RFLOAT BeamTiltGradHess(MultidimArray<Complex > &Fimg, RFLOAT beamtilt_x, RFLOAT
 	FOR_ALL_ELEMENTS_IN_FFTW_TRANSFORM2D(Fimg)
 	{
 		RFLOAT delta_phase = factor * (ip * ip + jp * jp) * (ip * beamtilt_y + jp * beamtilt_x);
-        RFLOAT common = factor * (ip * ip + jp * jp);
+        delta_phase = DEG2RAD(delta_phase);
+        RFLOAT common = DEG2RAD(factor * (ip * ip + jp * jp));
 		RFLOAT realval = DIRECT_A2D_ELEM(Fimg, i, j).real;
 		RFLOAT imagval = DIRECT_A2D_ELEM(Fimg, i, j).imag;
-        corr -= (realval * cos(delta_phase) + imagval * sin(delta_phase));
+        corr -= (realval * cos(delta_phase) - imagval * sin(delta_phase));
         //gradient of minus correlation
         RFLOAT grad =   realval * sin(delta_phase) 
-                      - imagval * cos(delta_phase) ;
+                      + imagval * cos(delta_phase) ;
         grad_bx += grad * common * jp;
         grad_by += grad * common * ip;
         RFLOAT hess =   realval * cos(delta_phase)
-                      + imagval * sin(delta_phase);
+                      - imagval * sin(delta_phase);
         hess_x += hess * common * jp * common * jp;
         hess_y += hess * common * ip * common * ip;
         hess_xy += hess * common * jp * common *ip;
@@ -1410,13 +1411,14 @@ RFLOAT BeamTiltGradHess(MultidimArray<Complex > &Fimg, RFLOAT beamtilt_x, RFLOAT
     return corr;
 }
 
-void OptimizeBeamTilt(MultidimArray<Complex> &Fimg, RFLOAT& beamtilt_x, RFLOAT& beamtilt_y,
+RFLOAT OptimizeBeamTilt(MultidimArray<Complex> &Fimg, RFLOAT& beamtilt_x, RFLOAT& beamtilt_y,
         RFLOAT wavelength, RFLOAT Cs, RFLOAT angpix, int ori_size, int iterations)
 {
+    RFLOAT corr = 0.;
     for(int i_descent = 0; i_descent < iterations; i_descent++)
     {
         RFLOAT grad_bx, grad_by, hess_x, hess_y, hess_xy;
-        BeamTiltGradHess(Fimg, beamtilt_x, beamtilt_y, wavelength, Cs, angpix, ori_size, 
+        corr = BeamTiltGradHess(Fimg, beamtilt_x, beamtilt_y, wavelength, Cs, angpix, ori_size, 
                 grad_bx, grad_by, hess_x, hess_y, hess_xy);
         //inverse of hessian
         RFLOAT deta = hess_x*hess_y - hess_xy*hess_xy;
@@ -1435,6 +1437,7 @@ void OptimizeBeamTilt(MultidimArray<Complex> &Fimg, RFLOAT& beamtilt_x, RFLOAT& 
         beamtilt_x -= 0.1*dx;
         beamtilt_y -= 0.1*dy;
     }
+    return corr;
 }
 
 void padAndFloat2DMap(const MultidimArray<RFLOAT > &v, MultidimArray<RFLOAT> &out, int factor)
