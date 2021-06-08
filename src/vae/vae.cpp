@@ -178,17 +178,18 @@ int train_a_batch(std::vector<float> &data, int part_id){
 
 }
 
-int train_unet(std::vector<float> &data, std::vector<float> &target, std::vector<float>& weight, int part_id, std::vector<float> &wrapped_output){
+int train_unet(std::vector<float> &proj, std::vector<float> &data, std::vector<float>& weight, int part_id, std::vector<float> &wrapped_data){
+    //target represents exprimental data, real_projections/proj represent reference projection
     torch::set_num_threads(15);
     (*unet_model)->train();
     torch::Device device(torch::kCUDA, 0);
     auto options = torch::TensorOptions().dtype(torch::kFloat32);
-    int batch_num = data.size()/(vae_image_size*vae_image_size);
+    int batch_num = proj.size()/(vae_image_size*vae_image_size);
     //std::cout << "batch_num: " << batch_num << std::endl;
     std::vector<long int> dimensions = {batch_num, 1, vae_image_size, vae_image_size};
     std::vector<long int> w_dims = {batch_num};
-    torch::Tensor torch_real_projections = torch::from_blob(data.data(), c10::ArrayRef<long int>(dimensions), options);
-    torch::Tensor torch_target = torch::from_blob(target.data(), c10::ArrayRef<long int>(dimensions), options);
+    torch::Tensor torch_real_projections = torch::from_blob(proj.data(), c10::ArrayRef<long int>(dimensions), options);
+    torch::Tensor torch_data = torch::from_blob(data.data(), c10::ArrayRef<long int>(dimensions), options);
     torch::Tensor torch_weight = torch::from_blob(weight.data(), c10::ArrayRef<long int>(w_dims), options);
     int start_dim = vae_image_size/2 - vae_mask_size/2;
     int end_pad = vae_image_size - (start_dim + vae_mask_size);
@@ -196,13 +197,13 @@ int train_unet(std::vector<float> &data, std::vector<float> &target, std::vector
     torch_real_projections = torch_real_projections.slice(2, start_dim, start_dim + vae_mask_size);
     torch_real_projections = torch_real_projections.slice(3, start_dim, start_dim + vae_mask_size);
     //torch_real_projections.print();
-    torch_target = torch_target.slice(2, start_dim, start_dim + vae_mask_size);
-    torch_target = torch_target.slice(3, start_dim, start_dim + vae_mask_size);
+    torch_data = torch_data.slice(2, start_dim, start_dim + vae_mask_size);
+    torch_data = torch_data.slice(3, start_dim, start_dim + vae_mask_size);
     //torch_target.print();
     torch_real_projections = torch_real_projections.to(device);
-    torch_target = torch_target.to(device);
+    torch_data = torch_data.to(device);
     torch_weight = torch_weight.to(device);
-    auto stacked_input = torch::cat({torch_real_projections, torch_target}, 1);
+    auto stacked_input = torch::cat({torch_real_projections, torch_data}, 1);
     //auto gpu_input = stacked_input.to(device);
     //auto data_mean = torch::mean(torch_real_projections, {1,2,3}, true, true);
     //auto data_std = std::get<0>(data_std_mean);
@@ -214,8 +215,8 @@ int train_unet(std::vector<float> &data, std::vector<float> &target, std::vector
     auto flow = flows.first;
     //flow = flow.to(torch::kCPU);
     
-    //warp data to target
-    auto output = torch::nn::functional::grid_sample(torch_target, flow, torch::nn::functional::GridSampleFuncOptions().
+    //warp data to projection
+    auto output = torch::nn::functional::grid_sample(torch_data, flow, torch::nn::functional::GridSampleFuncOptions().
             mode(torch::kBilinear).padding_mode(torch::kZeros).align_corners(true));
     //compute correlation
     //auto reconstruction_loss = torch::nn::functional::mse_loss(output, torch_real_projections, torch::nn::functional::MSELossFuncOptions().reduction(torch::kSum));
@@ -275,7 +276,7 @@ int train_unet(std::vector<float> &data, std::vector<float> &target, std::vector
             << " weights: " << torch_weight
             << std::endl;
     }
-    if(vae_index % 10000 == 0){
+    if(vae_index % 20000 == 0){
         //save model
         std::string model_path = "model" + std::to_string(vae_rank) + ".pt";
         torch::save(*unet_model, model_path);
@@ -284,7 +285,7 @@ int train_unet(std::vector<float> &data, std::vector<float> &target, std::vector
     }
     if(vae_index % 5000 == 0){
         //save images
-        torch::save(torch_target.to(torch::kCPU), "tmp"+std::to_string(vae_rank)+"/input"+std::to_string(part_id)+".pt");
+        torch::save(torch_data.to(torch::kCPU), "tmp"+std::to_string(vae_rank)+"/input"+std::to_string(part_id)+".pt");
         torch::save(torch_real_projections.to(torch::kCPU), "tmp"+std::to_string(vae_rank)+"/proj"+std::to_string(part_id)+".pt");
         torch::save(output.to(torch::kCPU), "tmp"+std::to_string(vae_rank)+"/output"+std::to_string(part_id)+".pt");
         torch::save(flows.second.to(torch::kCPU), "tmp"+std::to_string(vae_rank)+"/flow"+std::to_string(part_id)+".pt");

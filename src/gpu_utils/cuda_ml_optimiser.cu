@@ -285,7 +285,7 @@ void getFourierTransformsAndCtfs(long int my_ori_particle,
 		 */
 
 		// Apply (rounded) old offsets first
-		my_old_offset.selfROUND();
+		// my_old_offset.selfROUND();
 
 		int img_size = img.data.nzyxdim;
 		CudaGlobalPtr<XFLOAT> d_img(img_size,0,cudaMLO->devBundle->allocator);
@@ -295,10 +295,13 @@ void getFourierTransformsAndCtfs(long int my_ori_particle,
 		d_img.device_init(0);
 
 		for (int i=0; i<img_size; i++)
-			temp[i] = img.data.data[i];
+			//temp[i] = img.data.data[i];
+            d_img[i] = img.data.data[i];
 
-		temp.cp_to_device();
-		temp.streamSync();
+		//temp.cp_to_device();
+		//temp.streamSync();
+        d_img.cp_to_device();
+		d_img.streamSync();
 
 		int STBsize = ( (int) ceilf(( float)img_size /(float)BLOCK_SIZE));
 		// Apply the norm_correction term
@@ -316,11 +319,13 @@ void getFourierTransformsAndCtfs(long int my_ori_particle,
             XFLOAT correction_factor = baseMLO->mymodel.avg_norm_correction/normcorr;//baseMLO->iter == 1 ? baseMLO->mymodel.avg_norm_correction/normcorr : 1.;
             //if(baseMLO->iter == 1) DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_NORM) = 1.;
 			cuda_kernel_multi<<<STBsize,BLOCK_SIZE>>>(
-									~temp,
+									//~temp,
+                                    ~d_img,//use d_img directly and do shift in fourier domain
 									(XFLOAT)correction_factor,//(XFLOAT)(baseMLO->mymodel.avg_norm_correction / normcorr),
 									img_size);
 			LAUNCH_PRIVATE_ERROR(cudaGetLastError(),cudaMLO->errorStatus);
-			temp.streamSync();
+			//temp.streamSync();
+            d_img.streamSync();//do shift in fourier domain
 			CTOC(cudaMLO->timer,"norm_corr");
 		}
 
@@ -358,30 +363,31 @@ void getFourierTransformsAndCtfs(long int my_ori_particle,
 		}
 
 
-		my_old_offset.selfROUND();
-		CTIC(cudaMLO->timer,"kernel_translate");
-		if(cudaMLO->dataIs3D)
-			cuda_kernel_translate3D<<<STBsize,BLOCK_SIZE>>>(
-								~temp,  // translate from temp...
-								~d_img, // ... into d_img
-								img_size,
-								img.data.xdim,
-								img.data.ydim,
-								img.data.zdim,
-								XX(my_old_offset),
-								YY(my_old_offset),
-								ZZ(my_old_offset));
-		else
-			cuda_kernel_translate2D<<<STBsize,BLOCK_SIZE>>>(
-								~temp,  // translate from temp...
-								~d_img, // ... into d_img
-								img_size,
-								img.data.xdim,
-								img.data.ydim,
-								XX(my_old_offset),
-								YY(my_old_offset));
-		LAUNCH_PRIVATE_ERROR(cudaGetLastError(),cudaMLO->errorStatus);
-		CTOC(cudaMLO->timer,"kernel_translate");
+        //try to translate in fourier domain, so comment the old translation code now
+		//my_old_offset.selfROUND();
+		//CTIC(cudaMLO->timer,"kernel_translate");
+		//if(cudaMLO->dataIs3D)
+		//	cuda_kernel_translate3D<<<STBsize,BLOCK_SIZE>>>(
+		//						~temp,  // translate from temp...
+		//						~d_img, // ... into d_img
+		//						img_size,
+		//						img.data.xdim,
+		//						img.data.ydim,
+		//						img.data.zdim,
+		//						XX(my_old_offset),
+		//						YY(my_old_offset),
+		//						ZZ(my_old_offset));
+		//else
+		//	cuda_kernel_translate2D<<<STBsize,BLOCK_SIZE>>>(
+		//						~temp,  // translate from temp...
+		//						~d_img, // ... into d_img
+		//						img_size,
+		//						img.data.xdim,
+		//						img.data.ydim,
+		//						XX(my_old_offset),
+		//						YY(my_old_offset));
+		//LAUNCH_PRIVATE_ERROR(cudaGetLastError(),cudaMLO->errorStatus);
+		//CTOC(cudaMLO->timer,"kernel_translate");
 
 		if (baseMLO->has_converged && baseMLO->do_use_reconstruct_images) //rec_img is NOT norm_corrected in the CPU-code, so nor do we.
 		{
@@ -454,13 +460,34 @@ void getFourierTransformsAndCtfs(long int my_ori_particle,
 		cudaMLO->transformer1.reals.streamSync();
 
 		cudaMLO->transformer1.forward();
+        //translate the fourier trannsform
+        XFLOAT dx = -2 * PI * XX(my_old_offset) / (double)baseMLO->mymodel.ori_size;
+		XFLOAT dy = -2 * PI * YY(my_old_offset) / (double)baseMLO->mymodel.ori_size;
+        XFLOAT dz = 0.;
+        if(cudaMLO->dataIs3D)
+            dz = -2 * PI * ZZ(my_old_offset) / (double)baseMLO->mymodel.ori_size;
+
 		cudaMLO->transformer1.fouriers.streamSync();
 
 		int FMultiBsize = ( (int) ceilf(( float)cudaMLO->transformer1.fouriers.getSize()*2/(float)BLOCK_SIZE));
+        
 		cuda_kernel_multi<<<FMultiBsize,BLOCK_SIZE,0,cudaMLO->transformer1.fouriers.getStream()>>>(
 						(XFLOAT*)~cudaMLO->transformer1.fouriers,
 						(XFLOAT)1/((XFLOAT)(cudaMLO->transformer1.reals.getSize())),
 						cudaMLO->transformer1.fouriers.getSize()*2);
+        
+        //translate pictures in fourier domain
+        int FTransBsize = ( (int) ceilf(( float)cudaMLO->transformer1.fouriers.getSize()/(float)BLOCK_SIZE));
+        cuda_kernel_translateFourier<<<FTransBsize,BLOCK_SIZE,0,cudaMLO->transformer1.fouriers.getStream()>>>(
+                        (XFLOAT*)~cudaMLO->transformer1.fouriers,
+                        cudaMLO->transformer1.fouriers.getSize(),
+                        (int)cudaMLO->transformer1.xFSize,
+				        (int)cudaMLO->transformer1.yFSize,
+                        (int)cudaMLO->transformer1.zFSize,
+                        dx,
+                        dy,
+                        dz);
+
 		LAUNCH_PRIVATE_ERROR(cudaGetLastError(),cudaMLO->errorStatus);
 
 		CudaGlobalPtr<CUDACOMPLEX> d_Fimg(current_size_x * current_size_y * current_size_z, cudaMLO->devBundle->allocator);
@@ -475,7 +502,18 @@ void getFourierTransformsAndCtfs(long int my_ori_particle,
 				current_size_x, current_size_y, current_size_z  //Output dimensions
 				);
 		CTOC(cudaMLO->timer,"calcFimg");
-		cudaMLO->transformer1.fouriers.streamSync();
+        //now do a backword transform
+        cudaMLO->transformer1.backward();
+        runCenterFFT(
+            cudaMLO->transformer1.reals,
+            (int)cudaMLO->transformer1.xSize,
+            (int)cudaMLO->transformer1.ySize,
+            (int)cudaMLO->transformer1.zSize,
+            false
+            );
+        //copy data to d_img
+        cudaMLO->transformer1.reals.cp_on_device(d_img);
+		cudaMLO->transformer1.reals.streamSync();
 
 		CTIC(cudaMLO->timer,"cpFimg2Host");
 		d_Fimg.cp_to_host();
@@ -2860,6 +2898,7 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 						
             std::vector<float> real_projections(total_real_projections_size, 0);
             std::vector<float> real_images(total_real_projections_size, 0);
+            std::vector<float> wrapped_images(total_real_projections_size, 0);
             int torch_dim = baseMLO->mymodel.ori_size/2 + 1;
 						
 						//remember image at zero is reserved for ctf refinement, but so when major_weights[icls] size
@@ -2871,9 +2910,9 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 
             }
             //pass to auto encoder
-            if(DIRECT_A1D_ELEM(baseMLO->mymodel.data_vs_prior_class[exp_iclass], int(baseMLO->mymodel.ori_size/6)) > 1.){
+            if(DIRECT_A1D_ELEM(baseMLO->mymodel.data_vs_prior_class[exp_iclass], int(baseMLO->mymodel.ori_size/3)) > 1.){
                 pthread_mutex_lock(&global_mutex);
-                train_unet(real_projections, real_images, major_weights[i_cls], part_id);
+                train_unet(real_projections, real_images, major_weights[i_cls], part_id, wrapped_images);
                 pthread_mutex_unlock(&global_mutex);
             }
 
@@ -3829,8 +3868,53 @@ void MlOptimiserCuda::doThreadExpectationSomeParticles(int thread_id)
 #endif
 }
 
-void getFourierTransform(MlOptimiserCuda* cudaMLO, std::vector<float>& image)
+void getFourierTransform(MlOptimiserCuda* cudaMLO, MlOptimiser* baseMLO, std::vector<float>& image, int t_i, MultidimArray<Complex> &Fimg)
 {
+    unsigned xsize = cudaMLO->transformer1.xSize;
+    unsigned ysize = cudaMLO->transformer1.ySize;
+    unsigned image_size  = cudaMLO->transformer1.reals.getSize();
+    //copy to transformer
+    for(int t_j = 0; t_j < image_size; t_j++)
+    {
+        cudaMLO->transformer1.reals[t_j] = image[t_i*image_size + t_j];
+    }
+    cudaMLO->transformer1.reals.cp_to_device();
+    runCenterFFT(cudaMLO->transformer1.reals,
+                (int)cudaMLO->transformer1.xSize,
+                (int)cudaMLO->transformer1.ySize,
+                (int)cudaMLO->transformer1.zSize,
+                false);
+    cudaMLO->transformer1.forward();
+    int FMultiBsize = ( (int) ceilf(( float)cudaMLO->transformer1.fouriers.getSize()*2/(float)BLOCK_SIZE));
+    cuda_kernel_multi<<<FMultiBsize,BLOCK_SIZE,0,cudaMLO->transformer1.fouriers.getStream()>>>(
+            (XFLOAT*)~cudaMLO->transformer1.fouriers,
+            (XFLOAT)1/((XFLOAT)(cudaMLO->transformer1.reals.getSize())),
+            cudaMLO->transformer1.fouriers.getSize()*2);
+    LAUNCH_PRIVATE_ERROR(cudaGetLastError(),cudaMLO->errorStatus);
+
+    size_t current_size_x = baseMLO->mymodel.current_size / 2 + 1;
+    size_t current_size_y = baseMLO->mymodel.current_size;
+    size_t current_size_z = (cudaMLO->dataIs3D) ? baseMLO->mymodel.current_size : 1;
+
+    CudaGlobalPtr<CUDACOMPLEX> d_Fimg(current_size_x * current_size_y * current_size_z, cudaMLO->devBundle->allocator);
+    d_Fimg.device_alloc();
+
+    cudaMLO->transformer1.fouriers.streamSync();
+
+    windowFourierTransform2(
+            cudaMLO->transformer1.fouriers,
+            d_Fimg,
+            cudaMLO->transformer1.xFSize,cudaMLO->transformer1.yFSize, cudaMLO->transformer1.zFSize, //Input dimensions
+            current_size_x, current_size_y, current_size_z  //Output dimensions
+            );
+
+    Fimg.initZeros(current_size_x, current_size_y, current_size_z);
+    for(int i = 0; i < Fimg.nzyxdim; i++)
+    {
+        Fimg.data[i].real = (RFLOAT) d_Fimg[i].x;
+        Fimg.data[i].imag = (RFLOAT) d_Fimg[i].y;
+    }
+
 }
 
 void getRealRefProjPair(MlOptimiserCuda* cudaMLO, std::unique_ptr<CudaGlobalPtr<XFLOAT>>& major_projection,
@@ -4119,6 +4203,8 @@ void refineCTFNewton(CTF& new_ctf, MlOptimiser* baseMLO, OptimisationParamters &
 			if(fabs(dt) > 0.005) dt = copysign(0.005, dt);
 
 			defocus_a -= dt;
+            if(defocus_a < 0.) defocus_a += 2*PI;
+            if(defocus_a > 2*PI) defocus_a -= 2*PI;
 		}
 
 		if(false){

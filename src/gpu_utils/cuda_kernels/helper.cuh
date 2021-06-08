@@ -296,6 +296,14 @@ __global__ void cuda_kernel_cosineFilter(	XFLOAT *vol,
 											XFLOAT sum_bg_total);
 
 //----------------------------------------------------------------------------
+__global__ void cuda_kernel_translateFourier(	XFLOAT * g_image_in,
+											int image_size,
+											int xdim,
+											int ydim,
+											int zdim, //not used
+											XFLOAT dx,
+											XFLOAT dy,
+											XFLOAT dz);
 
 __global__ void cuda_kernel_translate2D(	XFLOAT * g_image_in,
 											XFLOAT * g_image_out,

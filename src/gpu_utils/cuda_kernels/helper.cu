@@ -323,6 +323,38 @@ __global__ void cuda_kernel_cosineFilter(	XFLOAT *vol,
 	}
 }
 
+//inplace translation
+__global__ void cuda_kernel_translateFourier(	XFLOAT * g_image_in,
+											    int image_size,
+											    int xdim,
+											    int ydim,
+                                                int zdim,
+											    XFLOAT dx,
+											    XFLOAT dy,
+                                                XFLOAT dz)
+{
+	int tid = threadIdx.x;
+	int bid =  blockIdx.x;
+
+	int x,y,z, xy;
+	int pixel=tid + bid*BLOCK_SIZE;
+    int xydim = xdim*ydim;
+
+	if(pixel<image_size)
+	{
+        //z =  pixel / xydim;
+		//xy = pixel % xydim;
+		y =  pixel / xdim;
+		x =  pixel % xdim;
+        if(y >= xdim) y -= ydim;
+        XFLOAT img_real = g_image_in[2*pixel];
+        XFLOAT img_imag = g_image_in[2*pixel + 1];
+        XFLOAT tmp_real, tmp_imag;
+        translatePixel(x, y, dx, dy, img_real, img_imag, tmp_real, tmp_imag);
+        g_image_in[2*pixel] = tmp_real;
+        g_image_in[2*pixel + 1] = tmp_imag;
+	}
+}
 
 __global__ void cuda_kernel_translate2D(	XFLOAT * g_image_in,
 											XFLOAT * g_image_out,
