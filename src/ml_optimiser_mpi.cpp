@@ -462,8 +462,10 @@ will still yield good performance and possibly a more stable execution. \n" << s
         int masked_size = particle_diameter/(2. * mymodel.pixel_size);
         masked_size += width_mask_edge;
         masked_size *= 2;
-        std::cout << "masked_size: " << masked_size << std::endl;
-        initialise_model_optimizer(mymodel.ori_size, masked_size, 64, 64, 1e-4, node->rank);
+        std::cout << "masked_size: " << masked_size << " ,ori_size: " << mymodel.ori_size << std::endl;
+        //initialise_model_optimizer(mymodel.ori_size, masked_size, 64, 32, 1e-4, node->rank, false);
+        //std::vector<float> tmp_vol(mymodel.ori_size*mymodel.ori_size*mymodel.ori_size, 0);
+        initialise_real_reconstructor(node->rank, 0, masked_size, mymodel.ori_size, true, mymodel.pixel_size, 1e-3);
     }
 
     initialiseWorkLoad();
@@ -757,6 +759,27 @@ void MlOptimiserMpi::expectation()
 	if (!node->isMaster())
 	{
 		MlOptimiser::expectationSetup();
+        if(node->rank == 1 || node->rank == 2)
+        {
+            for (int iclass = 0; iclass < 1; iclass++)
+            {
+                //copy reference to float array
+                MultidimArray<float> vol;
+
+                vol.resize(mymodel.Iref[iclass]);
+                //std::copy(mymodel.Iref[iclass].data, mymodel.Iref[iclass].data + MULTIDIM_SIZE(mymodel.Iref[iclass]), vol.begin());
+                for(int i = 0; i < MULTIDIM_SIZE(mymodel.Iref[iclass]); i++) 
+                    DIRECT_MULTIDIM_ELEM(vol, i) = DIRECT_MULTIDIM_ELEM(mymodel.Iref[iclass], i);
+                //set the volume of real reconstructor
+                if(node->rank == 1) 
+                {
+                    Image<RFLOAT> Itmp;
+                    Itmp() = mymodel.Iref[iclass];
+                    Itmp.write("tmp_img2.mrc");
+                }
+                set_real_reconstructor_volume(vol, node->rank == 1);
+            }
+        }
 
 		mydata.MDimg.clear();
 		mydata.MDmic.clear();
@@ -1925,8 +1948,8 @@ void MlOptimiserMpi::maximization()
 	// First reconstruct all classes in parallel
     void* devBundle = NULL;
     if(do_gpu && cudaDevices.size() && !node->isMaster()){
-        //int dev = node->rank % cudaDevices.size();
-        int dev = 0;
+        int dev = node->rank % cudaDevices.size();
+        //int dev = 0;
         std::cout << "node: " << node->rank << " assigned to device " << cudaDevices[dev] << " and do_parallel_disc_io " << do_parallel_disc_io << " do_sequential_halves_recons " << do_sequential_halves_recons << std::endl;
         MlDeviceBundle * b = new MlDeviceBundle(this);
         b->setDevice(cudaDevices[dev]);

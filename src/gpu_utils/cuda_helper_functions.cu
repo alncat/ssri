@@ -284,6 +284,7 @@ void runWavgKernel(
 		XFLOAT *trans_z,
 		XFLOAT *sorted_weights,
         XFLOAT *ori_idx,
+        XFLOAT *weights_val,
         XFLOAT *ori_proj,
         XFLOAT *ori_img,
 		XFLOAT *ctfs,
@@ -539,7 +540,8 @@ void runWavgKernel(
 				translation_num,
 				(XFLOAT) op.sum_weight[ipart],
 				(XFLOAT) op.significant_weight[ipart],
-				part_scale
+				part_scale,
+                weights_val
 				);
 					}
 				else if (refine_ctf && !save_proj)
@@ -565,7 +567,8 @@ void runWavgKernel(
 				translation_num,
 				(XFLOAT) op.sum_weight[ipart],
 				(XFLOAT) op.significant_weight[ipart],
-				part_scale
+				part_scale,
+                weights_val
 				);
 					}
 				else if (!refine_ctf && save_proj)
@@ -591,7 +594,8 @@ void runWavgKernel(
 				translation_num,
 				(XFLOAT) op.sum_weight[ipart],
 				(XFLOAT) op.significant_weight[ipart],
-				part_scale
+				part_scale,
+                weights_val
 				);
 					}
 				else
@@ -617,7 +621,8 @@ void runWavgKernel(
 				translation_num,
 				(XFLOAT) op.sum_weight[ipart],
 				(XFLOAT) op.significant_weight[ipart],
-				part_scale
+				part_scale,
+                weights_val
 				);
 					}
 
@@ -669,7 +674,12 @@ void runBackProjectKernel(
 		unsigned long imageCount,
 		bool data_is_3D,
 		bool do_sgd,
-		cudaStream_t optStream)
+		cudaStream_t optStream,
+        //CUDACOMPLEX* g_wrap,
+        XFLOAT* g_wrap,
+        XFLOAT* g_ori_idx,
+        XFLOAT raw_volume_weight,
+        bool wrapping=false)
 {
 
 	if(BP.mdlZ==1)
@@ -794,34 +804,72 @@ void runBackProjectKernel(
 					BP.mdlInitY,
 					BP.mdlInitZ);
 			else
-				cuda_kernel_backproject3D<false><<<imageCount,BP_REF3D_BLOCK_SIZE,0,optStream>>>(
-					d_img_real,
-					d_img_imag,
-					trans_x,
-					trans_y,
-					trans_z,
-					d_weights,
-					d_Minvsigma2s,
-					d_ctfs,
-					translation_num,
-					significant_weight,
-					weight_norm,
-					d_eulers,
-					BP.d_mdlReal,
-					BP.d_mdlImag,
-					BP.d_mdlWeight,
-					BP.maxR,
-					BP.maxR2,
-					BP.padding_factor,
-					imgX,
-					imgY,
-					imgZ,
-					imgX*imgY*imgZ,
-					BP.mdlX,
-					BP.mdlY,
-                    BP.mdlZ,
-					BP.mdlInitY,
-					BP.mdlInitZ);
+            {
+                if(!wrapping) 
+                {
+				    cuda_kernel_backproject3D<false><<<imageCount,BP_REF3D_BLOCK_SIZE,0,optStream>>>(
+					    d_img_real,
+					    d_img_imag,
+					    trans_x,
+					    trans_y,
+					    trans_z,
+					    d_weights,
+					    d_Minvsigma2s,
+					    d_ctfs,
+					    translation_num,
+					    significant_weight,
+					    weight_norm,
+					    d_eulers,
+					    BP.d_mdlReal,
+					    BP.d_mdlImag,
+					    BP.d_mdlWeight,
+					    BP.maxR,
+					    BP.maxR2,
+					    BP.padding_factor,
+					    imgX,
+					    imgY,
+					    imgZ,
+					    imgX*imgY*imgZ,
+					    BP.mdlX,
+					    BP.mdlY,
+                        BP.mdlZ,
+					    BP.mdlInitY,
+					    BP.mdlInitZ);
+                } else 
+                {
+                    cuda_kernel_backproject3D<false><<<imageCount,BP_REF3D_BLOCK_SIZE,0,optStream>>>(
+					    d_img_real,
+					    d_img_imag,
+                        g_wrap,
+                        g_ori_idx,
+					    trans_x,
+					    trans_y,
+					    trans_z,
+					    d_weights,
+					    d_Minvsigma2s,
+					    d_ctfs,
+					    translation_num,
+					    significant_weight,
+					    weight_norm,
+					    d_eulers,
+					    BP.d_mdlReal,
+					    BP.d_mdlImag,
+					    BP.d_mdlWeight,
+					    BP.maxR,
+					    BP.maxR2,
+					    BP.padding_factor,
+                        raw_volume_weight,
+					    imgX,
+					    imgY,
+					    imgZ,
+					    imgX*imgY*imgZ,
+					    BP.mdlX,
+					    BP.mdlY,
+                        BP.mdlZ,
+					    BP.mdlInitY,
+					    BP.mdlInitZ);
+                }
+            }
 		}
 		LAUNCH_HANDLE_ERROR(cudaGetLastError());
 	}
@@ -1689,6 +1737,57 @@ void windowFourierTransform2(
 		cuda_kernel_window_fourier_transform<false><<< grid_dim, WINDOW_FT_BLOCK_SIZE, 0, d_out.getStream() >>>(
 				&d_in.d_ptr[pos],
 				d_out.d_ptr,
+				iX, iY, iZ, iX * iY, //Input dimensions
+				oX, oY, oZ, oX * oY, //Output dimensions
+				oX*oY*oZ);
+		LAUNCH_HANDLE_ERROR(cudaGetLastError());
+	}
+}
+
+void windowFourierTransform3(
+		CudaGlobalPtr<CUDACOMPLEX> &d_in,
+		CudaGlobalPtr<XFLOAT>  &d_out,
+		size_t iX, size_t iY, size_t iZ, //Input dimensions
+		size_t oX, size_t oY, size_t oZ,  //Output dimensions
+		size_t Npsi,
+		size_t pos,
+        size_t pos_out,
+		cudaStream_t stream)
+{
+	if (iX > 1 && iY/2 + 1 != iX)
+		REPORT_ERROR("windowFourierTransform ERROR: the Fourier transform should be of an image with equal sizes in all dimensions!");
+
+//	if (oX == iX)
+//		REPORT_ERROR("windowFourierTransform ERROR: there is a one-to-one map between input and output!");
+
+
+	//if(oX==iX)
+	//{
+	//	HANDLE_ERROR(cudaStreamSynchronize(d_in.getStream()));
+	//	cudaCpyDeviceToDevice((&d_in.d_ptr[pos]), &d_out.d_ptr[pos_out], oX*oY*oZ*Npsi*2, d_out.getStream() );
+	//	return;
+	//}
+
+	if (oX >= iX)
+	{
+		long int max_r2 = (iX - 1) * (iX - 1);
+
+		dim3 grid_dim(ceil((float)(iX*iY*iZ) / (float) WINDOW_FT_BLOCK_SIZE),Npsi);
+		cuda_kernel_window_fourier_transform<true><<< grid_dim, WINDOW_FT_BLOCK_SIZE, 0, d_in.getStream() >>>(
+				(&d_in.d_ptr[pos]),
+				&d_out.d_ptr[pos_out],
+				iX, iY, iZ, iX * iY, //Input dimensions
+				oX, oY, oZ, oX * oY, //Output dimensions
+				iX*iY*iZ,
+				max_r2 );
+		LAUNCH_HANDLE_ERROR(cudaGetLastError());
+	}
+	else
+	{
+		dim3 grid_dim(ceil((float)(oX*oY*oZ) / (float) WINDOW_FT_BLOCK_SIZE),Npsi);
+		cuda_kernel_window_fourier_transform<false><<< grid_dim, WINDOW_FT_BLOCK_SIZE, 0, d_in.getStream() >>>(
+				(&d_in.d_ptr[pos]),
+				&d_out.d_ptr[pos_out],
 				iX, iY, iZ, iX * iY, //Input dimensions
 				oX, oY, oZ, oX * oY, //Output dimensions
 				oX*oY*oZ);

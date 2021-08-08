@@ -292,10 +292,13 @@ enum EMDLabel
     EMDL_ORIENT_ORIGIN_Z_PRIOR,
     EMDL_ORIENT_ROT,
     EMDL_ORIENT_ROT_PRIOR,
+    EMDL_ORIENT_ROT_SIGMA,
     EMDL_ORIENT_TILT,
     EMDL_ORIENT_TILT_PRIOR,
+    EMDL_ORIENT_TILT_SIGMA,
     EMDL_ORIENT_PSI,
     EMDL_ORIENT_PSI_PRIOR,
+    EMDL_ORIENT_PSI_SIGMA,
     EMDL_ORIENT_PSI_PRIOR_FLIP_RATIO,
 
     EMDL_PARTICLE_AUTOPICK_FOM,
@@ -684,10 +687,13 @@ private:
         EMDL::addLabel(EMDL_ORIENT_ORIGIN_Z_PRIOR, EMDL_DOUBLE, "rlnOriginZPrior", "Center of the prior on the X-coordinate (in pixels) for the origin of rotation");
         EMDL::addLabel(EMDL_ORIENT_ROT, EMDL_DOUBLE, "rlnAngleRot", "First Euler angle (rot, in degrees)");
         EMDL::addLabel(EMDL_ORIENT_ROT_PRIOR, EMDL_DOUBLE, "rlnAngleRotPrior", "Center of the prior (in degrees) on the first Euler angle (rot)");
+        EMDL::addLabel(EMDL_ORIENT_ROT_SIGMA, EMDL_DOUBLE, "rlnAngleRotSigma", "Standard deviation of the first Euler angle (rot)");
         EMDL::addLabel(EMDL_ORIENT_TILT, EMDL_DOUBLE, "rlnAngleTilt", "Second Euler angle (tilt, in degrees)");
         EMDL::addLabel(EMDL_ORIENT_TILT_PRIOR, EMDL_DOUBLE, "rlnAngleTiltPrior", "Center of the prior (in degrees) on the second Euler angle (tilt)");
+        EMDL::addLabel(EMDL_ORIENT_TILT_SIGMA, EMDL_DOUBLE, "rlnAngleTiltSigma", "Standard deviation of the second Euler angle (tilt)");
         EMDL::addLabel(EMDL_ORIENT_PSI, EMDL_DOUBLE, "rlnAnglePsi", "Third Euler, or in-plane angle (psi, in degrees)");
         EMDL::addLabel(EMDL_ORIENT_PSI_PRIOR, EMDL_DOUBLE, "rlnAnglePsiPrior", "Center of the prior (in degrees) on the third Euler angle (psi)");
+        EMDL::addLabel(EMDL_ORIENT_PSI_SIGMA, EMDL_DOUBLE, "rlnAnglePsiSigma", "Standard deviation of the third Euler angle (psi)");
         EMDL::addLabel(EMDL_ORIENT_PSI_PRIOR_FLIP_RATIO, EMDL_DOUBLE, "rlnAnglePsiFlipRatio", "Flip ratio of bimodal psi prior (0~0.5, 0 means an ordinary prior, 0.5 means a perfect bimodal prior)");
 
         EMDL::addLabel(EMDL_PARTICLE_AUTOPICK_FOM, EMDL_DOUBLE, "rlnAutopickFigureOfMerit", "Autopicking FOM for a particle");

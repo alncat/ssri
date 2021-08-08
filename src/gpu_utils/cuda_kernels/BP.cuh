@@ -443,6 +443,7 @@ template < bool DATA3D >
 __global__ void cuda_kernel_backproject3D(
 		XFLOAT *g_img_real,
 		XFLOAT *g_img_imag,
+        //CUDACOMPLEX* g_wrap,
         XFLOAT *g_wrap,
         XFLOAT *g_ori_idx,
 		XFLOAT *g_trans_x,
@@ -461,6 +462,7 @@ __global__ void cuda_kernel_backproject3D(
 		int max_r,
 		int max_r2,
 		XFLOAT padding_factor,
+        XFLOAT raw_volume_weight,
 		unsigned img_x,
 		unsigned img_y,
 		unsigned img_z,
@@ -562,8 +564,11 @@ __global__ void cuda_kernel_backproject3D(
 
 			if (weight >= significant_weight)
 			{
+                //weights for the raw volume
+                //weight *= raw_volume_weight;
+                Fweight += weight;
 				weight = (weight / weight_norm) * ctf * minvsigma2;
-				Fweight += weight * ctf;
+				//Fweight += weight * ctf;
 
 				if(DATA3D)
 					translatePixel(x, y, z, g_trans_x[itrans], g_trans_y[itrans], g_trans_z[itrans], img_real, img_imag, temp_real, temp_imag);
@@ -574,6 +579,20 @@ __global__ void cuda_kernel_backproject3D(
 				imag += temp_imag * weight;
 			}
 		}
+        
+        //check if the projection is wrapped
+        int ori_idx = __float2int_rd(g_ori_idx[img]);
+        Fweight /= weight_norm;
+        if(ori_idx >= 0){
+            //store projection to ori_idx
+            ori_idx += 1;
+            //add weighted wrapped image
+            real += g_wrap[2*(ori_idx*img_xyz + pixel)]*ctf*minvsigma2*Fweight/raw_volume_weight;
+            imag += g_wrap[2*(ori_idx*img_xyz + pixel)+1]*ctf*minvsigma2*Fweight/raw_volume_weight;
+            Fweight += Fweight/raw_volume_weight;
+        }
+        Fweight *= ctf*ctf*minvsigma2;
+
 
 		//BP
 		if (Fweight > (XFLOAT) 0.0)

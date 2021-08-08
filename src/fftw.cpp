@@ -428,6 +428,7 @@ void FourierTransformer::Transform(int sign)
 
         FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(fFourier)
             DIRECT_MULTIDIM_ELEM(fFourier,n) /= size;
+            //DIRECT_MULTIDIM_ELEM(fFourier,n) /= sqrt(size);
     }
     else if (sign == FFTW_BACKWARD)
     {
@@ -438,6 +439,9 @@ void FourierTransformer::Transform(int sign)
         fftw_execute_dft_c2r(fPlanBackward,
                 (fftw_complex*) MULTIDIM_ARRAY(fFourier), MULTIDIM_ARRAY(*fReal));
 #endif
+        //using normalized fourier transform
+        //FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(fFourier)
+        //    DIRECT_MULTIDIM_ELEM(fReal,n) /= sqrt(size);
     }
 }
 

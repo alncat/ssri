@@ -174,7 +174,9 @@ __global__ void cuda_kernel_wavg(
 		unsigned long translation_num,
 		XFLOAT weight_norm,
 		XFLOAT significant_weight,
-		XFLOAT part_scale)
+		XFLOAT part_scale,
+        XFLOAT* g_weights_val
+        )
 {
 	XFLOAT ref_real, ref_imag, img_real, img_imag, trans_real, trans_imag;
 
@@ -301,26 +303,27 @@ __global__ void cuda_kernel_wavg(
             s_wdiff2s_parts[tid] = tot_weight*(img_real*img_real + img_imag*img_imag);
 
             //orientation index
-						if(save_proj)
-							{
-            int ori_idx = __float2int_rd(g_ori_idx[bid]);
-            if(ori_idx >= 0){
-                //store projection to ori_idx
-                ori_idx += 1;
-                g_ori_proj[2*(ori_idx*image_size + pixel)] = ref_real*t_ctf*tot_weight;
-                g_ori_proj[2*(ori_idx*image_size + pixel) + 1] = ref_imag*t_ctf*tot_weight;
-                //deconvolution
-                g_ori_image[2*(ori_idx*image_size + pixel)] = real_diff;
-                g_ori_image[2*(ori_idx*image_size + pixel) + 1] = imag_diff;
+            if(save_proj)
+            {
+                int ori_idx = __float2int_rd(g_ori_idx[bid]);
+                if(ori_idx >= 0){
+                    //store projection to ori_idx
+                    if(tid == 0) g_weights_val[ori_idx] = tot_weight;
+                    ori_idx += 1;
+                    g_ori_proj[2*(ori_idx*image_size + pixel)] = ref_real;//*t_ctf*tot_weight;
+                    g_ori_proj[2*(ori_idx*image_size + pixel) + 1] = ref_imag;//*t_ctf*tot_weight;
+                    //deconvolution
+                    g_ori_image[2*(ori_idx*image_size + pixel)] = real_diff;
+                    g_ori_image[2*(ori_idx*image_size + pixel) + 1] = imag_diff;
+                }
             }
-                            }
-                        if(refine_ctf)
-                        {
-                            cuda_atomic_add(&g_ori_proj[2*pixel], ref_real*tot_weight*t_ctf);
-                            cuda_atomic_add(&g_ori_proj[2*pixel + 1], ref_imag*tot_weight*t_ctf);
-                            cuda_atomic_add(&g_ori_image[2*pixel], real_diff);
-                            cuda_atomic_add(&g_ori_image[2*pixel + 1], imag_diff);
-                        }
+            if(refine_ctf)
+            {
+                cuda_atomic_add(&g_ori_proj[2*pixel], ref_real*tot_weight);
+                cuda_atomic_add(&g_ori_proj[2*pixel + 1], ref_imag*tot_weight);
+                cuda_atomic_add(&g_ori_image[2*pixel], real_diff);
+                cuda_atomic_add(&g_ori_image[2*pixel + 1], imag_diff);
+            }
 			cuda_atomic_add(&g_wdiff2s_XA[pixel], s_sumXA[tid]);
 			cuda_atomic_add(&g_wdiff2s_AA[pixel], s_sumA2[tid]);
 			cuda_atomic_add(&g_wdiff2s_parts[pixel], s_wdiff2s_parts[tid]);

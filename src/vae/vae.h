@@ -46,7 +46,7 @@ class VAEImpl : public torch::nn::Module {
 TORCH_MODULE(VAE);
 
 struct CUNet2dImpl : torch::nn::Module {
-    CUNet2dImpl(int32_t inChannels, int32_t outChannels, int32_t inputSize, int32_t initFeatureChannels=64, int32_t levels=5, int32_t kernelSize=3, int32_t maxFeatureChannels=512, bool wrapping=true, bool padding=true, bool batchNorm=false, bool convolutionDownsampling=true, bool convolutionUpsampling=false, bool partialConvolution=false, bool showSizes=true)
+    CUNet2dImpl(int32_t inChannels, int32_t outChannels, int32_t inputSize, int32_t initFeatureChannels=32, int32_t levels=5, int32_t kernelSize=3, int32_t maxFeatureChannels=512, bool wrapping=true, bool padding=true, bool batchNorm=false, bool convolutionDownsampling=true, bool convolutionUpsampling=false, bool partialConvolution=false, bool showSizes=true)
     {
         this->levels=levels;
         this->kernelSize=kernelSize;
@@ -85,8 +85,12 @@ struct CUNet2dImpl : torch::nn::Module {
         {
             bool use_conv_up = false;
             //if(outputSizes[level+1]*2 == outputSizes[level]) use_conv_up = true;
-            int output_paddingSize = outputSizes[level] - transConvOut(outputSizes[level+1]);
-            upsampling.push_front(upsamplingBlock(featureChannels[level+2], featureChannels[level+1], output_paddingSize, use_conv_up));
+            if(use_conv_up) {
+                upsampling.push_front(upsamplingBlock(featureChannels[level+2], featureChannels[level+1], outputSizes[level], use_conv_up));
+            } else {
+                int output_paddingSize = outputSizes[level] - transConvOut(outputSizes[level+1]);
+                upsampling.push_front(upsamplingBlock(featureChannels[level+2], featureChannels[level+1], output_paddingSize, use_conv_up));
+            }
             register_module("upsampling"+std::to_string(level),upsampling.front());
 
             expanding.push_front(levelBlock(featureChannels[level+1]*2, featureChannels[level+1]));
@@ -107,6 +111,9 @@ struct CUNet2dImpl : torch::nn::Module {
             std::cout << "bias: " << std::endl;
             std::cout << flow->bias << std::endl;
             register_module("flow", flow);
+        } else {
+            reconstruct = reconstructBlock(outChannels);
+            register_module("reconstruct", reconstruct);
         }
     }
 
@@ -126,7 +133,7 @@ struct CUNet2dImpl : torch::nn::Module {
         grid = grid.to(device);
     }
 
-    std::pair<torch::Tensor, torch::Tensor> forward(const torch::Tensor& inputTensor) {
+    std::tuple<torch::Tensor, torch::Tensor, torch::Tensor> forward(const torch::Tensor& inputTensor) {
         std::vector<torch::Tensor> contractingTensor(levels-1);
         std::vector<torch::Tensor> downsamplingTensor(levels-1);
         torch::Tensor bottleneckTensor;
@@ -190,6 +197,7 @@ struct CUNet2dImpl : torch::nn::Module {
         if(wrapping)
         {
             auto tmp_flow = flow->forward(outputTensor);
+            //tmp_flow = torch::nn::functional::interpolate(tmp_flow, torch::nn::functional::InterpolateFuncOptions().size(std::vector<int64_t>({inputSize*2, inputSize*2})).mode(torch::kBilinear).align_corners(true));
             flowTensor = tmp_flow + grid;
             //assume the input is square
             flowTensor = 2.*(flowTensor/(float(inputSize) - 1.) - 0.5);
@@ -197,10 +205,17 @@ struct CUNet2dImpl : torch::nn::Module {
             flowTensor = flowTensor.permute({0,2,3,1});
             //reverse last channel, not sure why, follow voxelmorph
             //flowTensor = at::flip(flowTensor, 3);
-            return std::make_pair(flowTensor, tmp_flow);
+            auto backFlow = grid - tmp_flow;
+            backFlow = 2.*(backFlow/(float(inputSize) - 1.) - 0.5);
+            backFlow = backFlow.permute({0,2,3,1});
+            return std::make_tuple(flowTensor, backFlow, tmp_flow);
+        } else {
+            //reconstruct an image
+            auto reconstruction = reconstruct->forward(outputTensor);
+            torch::Tensor placeholder;
+            return std::make_tuple(reconstruction, placeholder, placeholder);
         }
 
-        return std::make_pair(outputTensor, outputTensor);
     }
 
     //the 2d tensor size you pass to the model must be a multiple of this
@@ -314,8 +329,7 @@ struct CUNet2dImpl : torch::nn::Module {
             //                );
             //else
             return torch::nn::Sequential(
-                    torch::nn::Upsample(torch::nn::UpsampleOptions().scale_factor(std::vector<double>({2,
-                                2})).mode(torch::kNearest)),
+                    torch::nn::Upsample(torch::nn::UpsampleOptions().size(std::vector<int64_t>({output_paddingSize, output_paddingSize})).mode(torch::kBilinear)),
                     torch::nn::Conv2d(torch::nn::Conv2dOptions(inChannels,
                             outChannels,
                             kernelSize).padding(paddingSize))
@@ -335,6 +349,13 @@ struct CUNet2dImpl : torch::nn::Module {
     {
         return torch::nn::Conv2d(torch::nn::Conv2dOptions(inChannels,
                         2,
+                        3).padding(paddingSize));
+    }
+
+    torch::nn::Conv2d reconstructBlock(int inChannels)
+    {
+        return torch::nn::Conv2d(torch::nn::Conv2dOptions(inChannels,
+                        1,
                         3).padding(paddingSize));
     }
 
@@ -358,6 +379,7 @@ struct CUNet2dImpl : torch::nn::Module {
     std::deque<torch::nn::Sequential>   expanding;
     torch::nn::Sequential               output;
     torch::nn::Conv2d                   flow{nullptr};
+    torch::nn::Conv2d                   reconstruct{nullptr};
     torch::Tensor                       grid;
 };
 TORCH_MODULE_IMPL(CUNet2d, CUNet2dImpl);

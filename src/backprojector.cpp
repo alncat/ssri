@@ -1790,6 +1790,8 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
             else
                 normfft = (RFLOAT)(padding_factor * padding_factor * padding_factor * ori_size);
         }
+        //take square root of normfft since we are using normalized dft
+        //normfft = sqrt(normfft);
         
         
         //FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(Fweight)

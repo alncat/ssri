@@ -216,6 +216,20 @@ void CTF::getFftwImage(MultidimArray<RFLOAT> &result, int orixdim, int oriydim, 
 	}
 }
 
+void CTF::getFftwImage(MultidimArray<float> &result, int orixdim, int oriydim, RFLOAT angpix,
+		    		bool do_abs, bool do_only_flip_phases, bool do_intact_until_first_peak, bool do_damping)
+{
+
+	RFLOAT xs = (RFLOAT)orixdim * angpix;
+	RFLOAT ys = (RFLOAT)oriydim * angpix;
+	FOR_ALL_ELEMENTS_IN_FFTW_TRANSFORM2D(result)
+	{
+		RFLOAT x = (RFLOAT)jp / xs;
+		RFLOAT y = (RFLOAT)ip / ys;
+		DIRECT_A2D_ELEM(result, i, j) = getCTF(x, y, do_abs, do_only_flip_phases, do_intact_until_first_peak, do_damping);
+	}
+}
+
 void CTF::getFftwImageandGrads(MultidimArray<RFLOAT> &result, MultidimArray<RFLOAT>& grad_u, MultidimArray<RFLOAT>& grad_v, MultidimArray<RFLOAT>& grad_t, MultidimArray<RFLOAT>& hessian_u, MultidimArray<RFLOAT>& hessian_v, MultidimArray<RFLOAT>& hessian_uv, MultidimArray<RFLOAT>& hessian_t, MultidimArray<RFLOAT>& hessian_tu, MultidimArray<RFLOAT>& hessian_tv, int orixdim, int oriydim, RFLOAT angpix,
 		    		bool do_abs, bool do_only_flip_phases, bool do_intact_until_first_peak, bool do_damping)
 {

@@ -1186,8 +1186,8 @@ void Postprocessing::run()
 		{
 			//randomizePhasesBeyond(I1(), randomize_at);
 			//randomizePhasesBeyond(I2(), randomize_at);
-            randomizeMask(I1(), Im());
-            randomizeMask(I2(), Im());
+            //randomizeMask(I1(), Im());
+            //randomizeMask(I2(), Im());
 			// Mask randomized phases maps and calculated fsc_random_masked
 			I1() *= Im();
 			I2() *= Im();

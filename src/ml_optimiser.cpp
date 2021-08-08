@@ -8207,8 +8207,11 @@ void MlOptimiser::setMetaDataSubset(int first_ori_particle_id, int last_ori_part
 			{
 				mydata.MDimg.setValue(EMDL_ORIENT_ROT,  DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_ROT), part_id);
 				mydata.MDimg.setValue(EMDL_ORIENT_TILT, DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_TILT), part_id);
+                mydata.MDimg.setValue(EMDL_ORIENT_ROT_SIGMA, DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_ROT_SIGMA), part_id);
+                mydata.MDimg.setValue(EMDL_ORIENT_TILT_SIGMA, DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_TILT_SIGMA), part_id);
 			}
 			mydata.MDimg.setValue(EMDL_ORIENT_PSI,  DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_PSI), part_id);
+            mydata.MDimg.setValue(EMDL_ORIENT_PSI_SIGMA, DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_PSI_SIGMA), part_id);
 			mydata.MDimg.setValue(EMDL_ORIENT_ORIGIN_X, DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_XOFF), part_id);
 			mydata.MDimg.setValue(EMDL_ORIENT_ORIGIN_Y, DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_YOFF), part_id);
 			if (mymodel.data_dim == 3)
@@ -8478,6 +8481,7 @@ void MlOptimiser::getMetaAndImageDataSubset(int first_ori_particle_id, int last_
 			mydata.MDimg.getValue(EMDL_ORIENT_ORIGIN_Y, DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_YOFF), part_id);
 			if (mymodel.data_dim == 3)
 				mydata.MDimg.getValue(EMDL_ORIENT_ORIGIN_Z, DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_ZOFF), part_id);
+            
 			mydata.MDimg.getValue(EMDL_PARTICLE_CLASS, iaux, part_id);
 			DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_CLASS) = (RFLOAT)iaux;
 			mydata.MDimg.getValue(EMDL_PARTICLE_DLL,  DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_DLL), part_id);
@@ -8575,6 +8579,13 @@ void MlOptimiser::getMetaAndImageDataSubset(int first_ori_particle_id, int last_
 					DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_ZOFF_PRIOR) = 999.;
 			if (!mydata.MDimg.getValue(EMDL_ORIENT_PSI_PRIOR_FLIP_RATIO,  DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_PSI_PRIOR_FLIP_RATIO), part_id))
 				DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_PSI_PRIOR_FLIP_RATIO) = 999.;
+
+            if (!mydata.MDimg.getValue(EMDL_ORIENT_ROT_SIGMA,  DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_ROT_SIGMA), part_id))
+				DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_ROT_PRIOR) = mymodel.sigma2_rot;
+			if (!mydata.MDimg.getValue(EMDL_ORIENT_TILT_SIGMA, DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_TILT_SIGMA), part_id))
+				DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_TILT_PRIOR) = mymodel.sigma2_tilt;
+			if (!mydata.MDimg.getValue(EMDL_ORIENT_PSI_SIGMA,  DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_PSI_SIGMA), part_id))
+				DIRECT_A2D_ELEM(exp_metadata, my_image_no, METADATA_PSI_PRIOR) = mymodel.sigma2_psi;
 
 			// For multi-body refinement
 			if (mymodel.nr_bodies > 1)

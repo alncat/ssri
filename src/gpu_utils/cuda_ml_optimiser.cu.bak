@@ -166,6 +166,14 @@ void getFourierTransformsAndCtfs(long int my_ori_particle,
 				baseMLO->sampling.selectOrientationsWithNonZeroPriorProbability(prior_rot, prior_tilt, prior_psi,
 						sqrt(baseMLO->mymodel.sigma2_rot), sqrt(baseMLO->mymodel.sigma2_tilt), sqrt(baseMLO->mymodel.sigma2_psi),
 						op.pointer_dir_nonzeroprior, op.directions_prior, op.pointer_psi_nonzeroprior, op.psi_prior);
+
+                //RFLOAT sigma2_rot = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_ROT_SIGMA);
+                //RFLOAT sigma2_tilt = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_TILT_SIGMA);
+                //RFLOAT sigma2_psi = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_PSI_SIGMA);
+
+                //baseMLO->sampling.selectOrientationsWithNonZeroPriorProbability(prior_rot, prior_tilt, prior_psi,
+				//		sqrt(sigma2_rot), sqrt(sigma2_tilt), sqrt(sigma2_psi),
+				//		op.pointer_dir_nonzeroprior, op.directions_prior, op.pointer_psi_nonzeroprior, op.psi_prior);
 			}
 
 			long int nr_orients = baseMLO->sampling.NrDirections(0, &op.pointer_dir_nonzeroprior) * baseMLO->sampling.NrPsiSamplings(0, &op.pointer_psi_nonzeroprior);
@@ -2199,6 +2207,8 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 	int nr_fake_classes = (sp.iclass_max-sp.iclass_min+1);
 	int oversamples = sp.nr_oversampled_trans * sp.nr_oversampled_rot;
 	std::vector<long int> block_nums(sp.nr_particles*nr_fake_classes);
+    // Luo:
+    std::vector<std::vector<double>> avg_offsets;
 
 	for (long int ipart = 0; ipart < sp.nr_particles; ipart++)
 	{
@@ -2331,8 +2341,8 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 
 		if (cudaMLO->dataIs3D)
 			p_thr_wsum_prior_offsetz_class.device_alloc();
-		else
-			p_thr_wsum_prior_offsetz_class.d_ptr  = p_thr_wsum_prior_offsety_class.d_ptr;
+		//else
+	    //	p_thr_wsum_prior_offsetz_class.d_ptr  = p_thr_wsum_prior_offsety_class.d_ptr;
 
 		p_thr_wsum_sigma2_offset.device_alloc();
 		CTOC(cudaMLO->timer,"collect_data_2_pre_kernel");
@@ -2390,10 +2400,13 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 			p_thr_wsum_prior_offsetz_class.cp_to_host();
 
 		DEBUG_HANDLE_ERROR(cudaStreamSynchronize(cudaStreamPerThread));
+
+        // Luo: now get the average of offset
+        RFLOAT avg_offsetx = 0., avg_offsety = 0.;
+
 		int iorient = 0;
 		partial_pos=0;
         
-
 		for (int exp_iclass = sp.iclass_min; exp_iclass <= sp.iclass_max; exp_iclass++)
 		{
 			int fake_class = exp_iclass-sp.iclass_min; // if we only have the third class to do, the third class will be the "first" we do, i.e. the "fake" first.
@@ -2424,12 +2437,17 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 					thr_wsum_prior_offsetx_class[exp_iclass] += p_thr_wsum_prior_offsetx_class[n];
 					thr_wsum_prior_offsety_class[exp_iclass] += p_thr_wsum_prior_offsety_class[n];
 				}
+
+                // sum over the offsetx for this orientation
+                avg_offsetx += p_thr_wsum_prior_offsetx_class[n];
+                avg_offsety += p_thr_wsum_prior_offsety_class[n];
 			}
             
 			partial_pos+=block_num;
 		} // end loop iclass
         //DEBUG_ME
         //if(sp.iclass_min == 0) std::cout << ProjectionData[ipart].class_entries[0] << " " << thr_wsum_pdf_class[0] << " " << thr_wsum_pdf_class[1] << std::endl;
+        avg_offsets.push_back({avg_offsetx, avg_offsety, 0.});
 		CTOC(cudaMLO->timer,"collect_data_2_post_kernel");
 	} // end loop ipart
 
@@ -2438,6 +2456,9 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 	======================================================*/
 
 	std::vector< RFLOAT> oversampled_rot, oversampled_tilt, oversampled_psi;
+    //Luo: store euler angles of each particle
+    std::vector<RFLOAT> old_rots, old_tilts, old_psis;
+
 	for (long int ipart = 0; ipart < sp.nr_particles; ipart++)
 	{
 		CTIC(cudaMLO->timer,"setMetadata");
@@ -2490,6 +2511,10 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 		RFLOAT old_psi = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, icol_psi);
 		DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, icol_psi) = psi;
 
+        old_rots.push_back(old_rot);
+        old_tilts.push_back(old_tilt);
+        old_psis.push_back(old_psi);
+
 		Matrix1D<RFLOAT> shifts(2);
 		//21may2015
 		if (baseMLO->mymodel.nr_bodies == 1)
@@ -2521,6 +2546,10 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 		DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, icol_yoff) = YY(shifts);
 		if (cudaMLO->dataIs3D)
 			DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, icol_zoff) = ZZ(shifts);
+
+        //Luo:
+        //DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, icol_xoff) = avg_offsets[ipart][0];
+        //DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, icol_yoff) = avg_offsets[ipart][1];
 
 		if (ibody == 0)
 		{
@@ -2717,13 +2746,16 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
         std::vector<std::unique_ptr<CudaGlobalPtr<XFLOAT>>> major_projections;
         std::vector<std::unique_ptr<CudaGlobalPtr<XFLOAT>>> major_images;
         std::vector<std::vector<XFLOAT>> major_weights;
-        std::vector<std::vector<float>>  major_thetas;
 
 		int classPos = 0;
 
 		for (int exp_iclass = sp.iclass_min; exp_iclass <= sp.iclass_max; exp_iclass++)
 			DEBUG_HANDLE_ERROR(cudaStreamSynchronize(cudaMLO->classStreams[exp_iclass]));
 		DEBUG_HANDLE_ERROR(cudaStreamSynchronize(cudaStreamPerThread));
+
+        // Luo: compute average rot, tilt, psi
+        RFLOAT avg_rot = 0., avg_tilt = 0., avg_psi = 0., sum_prob = 0.;
+        RFLOAT sigma2_rot = 0., sigma2_tilt = 0., sigma2_psi = 0.;
 
 		for (int exp_iclass = sp.iclass_min; exp_iclass <= sp.iclass_max; exp_iclass++)
 		{
@@ -2780,42 +2812,48 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 								= thisClassFinePassWeights.weights[i];
             //create a priority queue
             std::priority_queue<std::pair<float, long unsigned>> pq;
+            
+            int prefix = (exp_iclass - sp.iclass_min)*orientation_num;
             for (long unsigned i = 0; i < orientation_num; i++){
                 major_orientations[i + (exp_iclass - sp.iclass_min)*orientation_num] = 0.;
                 for(long unsigned j = 0; j < translation_num; j++){
                     if(sorted_weights[classPos+i*translation_num + j] >= op.significant_weight[ipart]){
-                        major_orientations[i + (exp_iclass - sp.iclass_min)*orientation_num] += sorted_weights[classPos + i*translation_num + j];
+                        major_orientations[i + prefix] += sorted_weights[classPos + i*translation_num + j];
                     }
                 }
-                pq.push(std::make_pair(major_orientations[i + (exp_iclass - sp.iclass_min)*orientation_num], i + (exp_iclass - sp.iclass_min)*orientation_num));
+                pq.push(std::make_pair(major_orientations[i + prefix], i + prefix));
+
+                RFLOAT prob = major_orientations[i + prefix];
+
+                avg_rot  += prob * thisClassProjectionData.rots[i];
+                avg_tilt += prob * thisClassProjectionData.tilts[i];
+                avg_psi  += prob * thisClassProjectionData.psis[i];
+                sum_prob += prob;
+
+                //sigma2_rot += prob * (thisClassProjectionData.rots[i] - old_rots[ipart]) * (thisClassProjectionData.rots[i] - old_rots[ipart]); 
+                //sigma2_tilt += prob * (thisClassProjectionData.tilts[i] - old_tilts[ipart]) * (thisClassProjectionData.tilts[i] - old_tilts[ipart]); 
+                //sigma2_psi += prob * (thisClassProjectionData.psis[i] - old_psis[ipart]) * (thisClassProjectionData.psis[i] - old_psis[ipart]); 
+
             }
+
+
             ////pop first 4 orientation
             int major_cnt = 0;
             major_weights.push_back(std::vector<XFLOAT>());
-            major_thetas.push_back(std::vector<float>());
             for(long unsigned i = 0; i < orientation_num; i++){
                 major_orientations[i + (exp_iclass - sp.iclass_min)*orientation_num] = -1;
             }
 
             //std::cout << "sum_weight: " << op.sum_weight[ipart] << std::endl;
             float max_major_weight = 0.;
-			//zero index corresponding to image for ctf refinement, which is the sum of all orientations and
-			//translations
-			major_weights.back().push_back(1.);
-
+						//zero index corresponding to image for ctf refinement, which is the sum of all orientations and
+						//translations
+						major_weights.back().push_back(1.);
             while(major_cnt < 2 && !pq.empty() && pq.top().first > 0.) {
                 if(max_major_weight < pq.top().first) max_major_weight = pq.top().first;
                 else if(max_major_weight > pq.top().first*1e2) break;
                 major_orientations[pq.top().second] = major_cnt;
                 major_weights.back().push_back(pq.top().first/op.sum_weight[ipart]);
-                int sel_idx = pq.top().second;
-                float alpha = DEG2RAD(thisClassProjectionData.rots[sel_idx]);
-	            float beta  = DEG2RAD(thisClassProjectionData.tilts[sel_idx]);
-	            float gamma = DEG2RAD(thisClassProjectionData.psis[sel_idx]);
-
-                major_thetas.back().push_back(alpha);
-                major_thetas.back().push_back(beta);
-                major_thetas.back().push_back(gamma);
                 //std::cout << "major_weights: " << major_weights.back().back() << std::endl;
                 major_cnt++;
                 //std::cout << pq.top().second << " " << pq.top().first << " " << major_cnt << std::endl;
@@ -2832,6 +2870,36 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 			classPos+=orientation_num*translation_num;
 			CTOC(cudaMLO->timer,"pre_wavg_map");
 		}
+
+        // divide the averages by sum weight to get real average
+        avg_rot  /= sum_prob;
+        avg_tilt /= sum_prob;
+        avg_psi  /= sum_prob;
+
+        int icol_rot  = (baseMLO->mymodel.nr_bodies == 1) ? METADATA_ROT  : 0 + METADATA_LINE_LENGTH_BEFORE_BODIES + (ibody) * METADATA_NR_BODY_PARAMS;
+		int icol_tilt = (baseMLO->mymodel.nr_bodies == 1) ? METADATA_TILT : 1 + METADATA_LINE_LENGTH_BEFORE_BODIES + (ibody) * METADATA_NR_BODY_PARAMS;
+		int icol_psi  = (baseMLO->mymodel.nr_bodies == 1) ? METADATA_PSI  : 2 + METADATA_LINE_LENGTH_BEFORE_BODIES + (ibody) * METADATA_NR_BODY_PARAMS;
+
+        //DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, icol_rot)  = avg_rot;
+		//DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, icol_tilt) = avg_tilt;
+		//DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, icol_psi)  = avg_psi;
+
+        // Luo: calculate sigma2_rot
+        //sigma2_rot /= sum_prob;
+        //sigma2_tilt /= sum_prob;
+        //sigma2_psi /= sum_prob;
+        //sigma2_rot = std::min(sigma2_rot, baseMLO->mymodel.sigma2_rot);
+        //sigma2_tilt = std::min(sigma2_tilt, baseMLO->mymodel.sigma2_tilt);
+        //sigma2_psi = std::min(sigma2_psi, baseMLO->mymodel.sigma2_psi);
+
+        // Luo: set sigma2
+        //int icol_rot_sigma  = (baseMLO->mymodel.nr_bodies == 1) ? METADATA_ROT_SIGMA  : 0 + METADATA_LINE_LENGTH_BEFORE_BODIES + (ibody) * METADATA_NR_BODY_PARAMS;
+		//int icol_tilt_sigma = (baseMLO->mymodel.nr_bodies == 1) ? METADATA_TILT_SIGMA : 1 + METADATA_LINE_LENGTH_BEFORE_BODIES + (ibody) * METADATA_NR_BODY_PARAMS;
+		//int icol_psi_sigma  = (baseMLO->mymodel.nr_bodies == 1) ? METADATA_PSI_SIGMA  : 2 + METADATA_LINE_LENGTH_BEFORE_BODIES + (ibody) * METADATA_NR_BODY_PARAMS;
+        //DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, icol_rot_sigma)  = sigma2_rot;
+		//DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, icol_tilt_sigma) = sigma2_tilt;
+		//DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, icol_psi_sigma)  = sigma2_psi;
+
 		sorted_weights.put_on_device();
         major_orientations.put_on_device();
 
@@ -2925,25 +2993,21 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 						
 						//remember image at zero is reserved for ctf refinement, but so when major_weights[icls] size
 						//is 1, we will only refine ctf
-                        //pass to auto encoder
-            bool do_wrapping = false && DIRECT_A1D_ELEM(baseMLO->mymodel.data_vs_prior_class[exp_iclass], int(baseMLO->mymodel.ori_size/3.7)) > 1.;
-            if(do_wrapping)
-            {
-                for(int t_i = 0; t_i < major_weights[i_cls].size(); t_i++) 
-                {
-                    if(t_i > 0 && abs(major_weights_validate[t_i-1] - major_weights[i_cls][t_i]) > 1e-4) 
-                    {
-                        std::cout << "major_weights: " << major_weights_validate[t_i-1] << ", " << major_weights_validate[t_i-1] - major_weights[i_cls][t_i] << std::endl;
-                        std::cout << "significant_weight: " << op.significant_weight[ipart] << ", sum_weight: " << op.sum_weight[ipart] << std::endl;
-                    }
-                    getRealRefProjPair(cudaMLO, baseMLO, major_projections[i_cls], major_images[i_cls],
-                            real_projections, real_images, image_size,  major_weights[i_cls][t_i],
-                            projKernel, t_i, part_id == 1688);
-
+            for(int t_i = 0; t_i < major_weights[i_cls].size(); t_i++) {
+                if(t_i > 0 && abs(major_weights_validate[t_i-1] - major_weights[i_cls][t_i]) > 1e-4) {
+                    std::cout << "major_weights: " << major_weights_validate[t_i-1] << ", " << major_weights_validate[t_i-1] - major_weights[i_cls][t_i] << std::endl;
+                    std::cout << "significant_weight: " << op.significant_weight[ipart] << ", sum_weight: " << op.sum_weight[ipart] << std::endl;
                 }
-                //set the first weight to 0.1 to downweigh the loss from consensus projection
-                major_weights[i_cls][0] = 0.1;
+                getRealRefProjPair(cudaMLO, baseMLO, major_projections[i_cls], major_images[i_cls],
+                        real_projections, real_images, image_size,  major_weights[i_cls][t_i],
+                        projKernel, t_i, part_id == 1688);
 
+            }
+            //set the first weight to 0.1 to downweigh the loss from consensus projection
+            major_weights[i_cls][0] = 0.1;
+            //pass to auto encoder
+            bool do_wrapping = false && DIRECT_A1D_ELEM(baseMLO->mymodel.data_vs_prior_class[exp_iclass], int(baseMLO->mymodel.ori_size/3.7)) > 1.;
+            if(do_wrapping){
                 pthread_mutex_lock(&global_mutex);
                 //train_denoising_unet(real_projections, real_images, major_weights[i_cls], part_id, wrapped_images);
                 train_unet(real_projections, real_images, major_weights[i_cls], part_id, wrapped_images);
@@ -2952,9 +3016,9 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 
             //update ctf per particle,
             CTF new_ctf;
-            bool refine_ctf_with_torch = DIRECT_A1D_ELEM(baseMLO->mymodel.data_vs_prior_class[exp_iclass], int(baseMLO->mymodel.ori_size/6)) > 1.;
+            bool refine_ctf_with_torch = DIRECT_A1D_ELEM(baseMLO->mymodel.data_vs_prior_class[exp_iclass], int(baseMLO->mymodel.ori_size/5.3)) > 1.;
             //refine ctf only when the angular sampling is less than 7.5 degree
-            refine_ctf_with_torch = refine_ctf_with_torch && (baseMLO->sampling.healpix_order > 1) && sp.iclass_max - sp.iclass_min == 0;
+            refine_ctf_with_torch = refine_ctf_with_torch && (baseMLO->sampling.healpix_order > 2) && sp.iclass_max - sp.iclass_min == 0;
             //std::cout << baseMLO->do_ctf_correction << " " << cudaMLO->dataIs3D << " " << sp.iclass_max - sp.iclass_min << std::endl;
 
             if(baseMLO->do_ctf_correction && !cudaMLO->dataIs3D ){
@@ -2998,14 +3062,14 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
                     //std::vector<float> ctf_vec(MULTIDIM_SIZE(Fctf));
                     //std::copy(Fctf.data, Fctf.data + MULTIDIM_SIZE(Fctf), ctf_vec.begin());
                     //use 100 angstrom as default restraint, real_projections is ref, real_images is data
-                    std::vector<float> ctf_vec(image_size*2);
+                    std::vector<float> ctf_vec(image_size);
                     //std::copy(wdiff2s_XA.h_ptr, wdiff2s_XA.h_ptr + image_size, ctf_vec.begin()); 
-                    for(int ic = 0; ic < 2*image_size; ic++) ctf_vec[ic] = (*major_projections[i_cls])[ic];
+                    for(int ic = 0; ic < image_size; ic++) ctf_vec[ic] = wdiff2s_XA[ic];
                     pthread_mutex_lock(&global_mutex);
                     
                     optimize_ctf(real_images, real_projections, ctf_vec, defocus_u, defocus_v, defocus_a, 100,
                             Ks, Q0, baseMLO->mymodel.ori_size, baseMLO->mymodel.pixel_size, true, 
-                            baseMLO->mymodel.current_size, part_id == 1898);
+                            baseMLO->mymodel.current_size, part_id == 19898);
                     pthread_mutex_unlock(&global_mutex);
 
                     //update ctf parameters in new_ctf
@@ -3047,8 +3111,7 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
                     }
 
                     //only update ctf when correlation improved
-                    if(true) 
-                    {//correlation > old_correlation) {
+                    if(true) {//correlation > old_correlation) {
                         for (long int j = 0; j < image_size; j++){
                             wdiff2s_AA[j] *= Fctf.data[j]*Fctf.data[j];
                             wdiff2s_XA[j] *= Fctf.data[j];
@@ -3083,24 +3146,23 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
                             //wdiff2s_XA[j] = fabs(wdiff2s_XA[j]);//tmp;
                         }
                     }
-                }//toggle on ctf refinement when refinement stabilized
-                //directly multiply AA and XA with ctf;
-                else {
-                    for (long int j = 0; j < image_size; j++)
-                    {
-                        wdiff2s_AA[j] *= op.Fctfs[ipart].data[j]*op.Fctfs[ipart].data[j];
-                        wdiff2s_XA[j] *= op.Fctfs[ipart].data[j];
-                        exp_AA[ipart] += wdiff2s_AA[j];
-                        exp_XX[ipart] += wdiff2s_sum[j];
-                        //RFLOAT tmp = wdiff2s_sum[j];
-                        wdiff2s_sum[j] = wdiff2s_sum[j] - 2.*wdiff2s_XA[j] + wdiff2s_AA[j];
-                        //DIRECT_MULTIDIM_ELEM(exp_wsum_ctf_image_reference_product[ipart], j) += wdiff2s_XA[j];
-                        //wdiff2s_XA[j] = fabs(wdiff2s_XA[j]);//tmp;
+                    }//toggle on ctf refinement when refinement stabilized
+                    //directly multiply AA and XA with ctf;
+                    else {
+                        for (long int j = 0; j < image_size; j++){
+                            wdiff2s_AA[j] *= op.Fctfs[ipart].data[j]*op.Fctfs[ipart].data[j];
+                            wdiff2s_XA[j] *= op.Fctfs[ipart].data[j];
+                            exp_AA[ipart] += wdiff2s_AA[j];
+                            exp_XX[ipart] += wdiff2s_sum[j];
+                            //RFLOAT tmp = wdiff2s_sum[j];
+                            wdiff2s_sum[j] = wdiff2s_sum[j] - 2.*wdiff2s_XA[j] + wdiff2s_AA[j];
+                            //DIRECT_MULTIDIM_ELEM(exp_wsum_ctf_image_reference_product[ipart], j) += wdiff2s_XA[j];
+                            //wdiff2s_XA[j] = fabs(wdiff2s_XA[j]);//tmp;
+                        }
                     }
                 }
-            }
 
-                //multiply AA and XA with ctf
+            //multiply AA and XA with ctf
 
 			/*======================================================
 								BACKPROJECTION
@@ -3115,66 +3177,11 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
             //major_projections[i_cls]->free_device_if_set();
             //major_images[i_cls]->free_device_if_set();
             //CudaGlobalPtr<XFLOAT> wrapped_images_FTs(major_images[i_cls]->getSize(), cudaMLO->devBundle->allocator);
-            bool train_real = true;
-            if(train_real)
-            {
-                //train real reconstructor
-                auto copy_from_global_ptr = [](auto & dst, auto & src, int offset)
-                {
-                    dst.resize(src.getSize() - offset, 0.);
-                    std::copy(src.h_ptr + offset, src.h_ptr + src.getSize(), dst.begin());
-                };
-
-                std::vector<float> invsigma;
-                copy_from_global_ptr(invsigma, Minvsigma2s, 0);
-
-                std::vector<float> ref_projections;
-                copy_from_global_ptr(ref_projections, *major_projections[i_cls], image_size*2);
-
-                std::vector<float> images;
-                copy_from_global_ptr(images, *major_images[i_cls], image_size*2);
-
-                float defocus_u = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_U);
-                float defocus_v = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_V);
-                float defocus_a = DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_DEFOCUS_ANGLE);
-                //convert angle to radian
-                defocus_a = DEG2RAD(defocus_a);
-                //using new_ctf to calculate ks and q0
-                new_ctf.setValues(defocus_u,
-                        defocus_v,
-                        RAD2DEG(defocus_a),
-                        DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_VOLTAGE),
-                        DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_CS),
-                        DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_Q0),
-                        DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_BFAC),
-                        1.,
-                        DIRECT_A2D_ELEM(baseMLO->exp_metadata, op.metadata_offset + ipart, METADATA_CTF_PHASE_SHIFT));
-
-                std::vector<float> deltas = {defocus_u, defocus_v};
-                std::vector<float> Ks;
-                float Q0;
-                new_ctf.getKsQ0(Ks, Q0);
-
-                //compute ctf using new_ctf
-                MultidimArray<float> ref_ctf(baseMLO->mymodel.current_size, baseMLO->mymodel.current_size/2 + 1);
-                new_ctf.getFftwImage(ref_ctf, baseMLO->mymodel.ori_size, baseMLO->mymodel.ori_size, baseMLO->mymodel.pixel_size,
-                            baseMLO->ctf_phase_flipped, baseMLO->only_flip_phases, baseMLO->intact_ctf_first_peak, true);
-
-                pthread_mutex_lock(&global_mutex);
-                train_real_reconstructor(images, invsigma, ref_projections, major_weights[i_cls], ref_ctf,
-                                        baseMLO->mymodel.current_size, 
-                                        major_thetas[i_cls], deltas, defocus_a, Ks, Q0, part_id);
-                pthread_mutex_unlock(&global_mutex);
-            }
-
             do_wrapping = false && DIRECT_A1D_ELEM(baseMLO->mymodel.data_vs_prior_class[exp_iclass], int(baseMLO->mymodel.ori_size/3.4)) > 1.;
-            if(do_wrapping)
-            {
+            if(do_wrapping){
                 //wrapped_images_FTs.device_alloc();
                 //wrapped_images_FTs.device_init(0.);
-                
-                for(int t_i = 1; t_i < major_weights[i_cls].size(); t_i++)
-                {
+                for(int t_i = 1; t_i < major_weights[i_cls].size(); t_i++){
                     getFourierTransform(cudaMLO, baseMLO, projKernel, wrapped_images, t_i, *major_projections[i_cls]);
                 }
                 //wrapped_images_FTs.cp_to_host();
@@ -3186,8 +3193,7 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
                 RFLOAT w_norm = 0.;
                 RFLOAT diff = 0.;
                 //compare FTs
-                auto compare_ft = [&](auto& a, auto& b) 
-                {
+                auto compare_ft = [&](auto& a, auto& b) {
                     for(int t_i = 0; t_i < major_weights[i_cls].size(); t_i++){
                         for(int t_j = 0; t_j < image_size; t_j++){
                             int idx = 2*(t_j + t_i*image_size);
@@ -4229,7 +4235,7 @@ void refineCTFNewton(CTF& new_ctf, MlOptimiser* baseMLO, OptimisationParamters &
 	RFLOAT old_correlation = 0.;
 	for (long int j = 0; j < image_size; j++) {
 		int ires = DIRECT_MULTIDIM_ELEM(baseMLO->Mresol_fine, j);
-		if(ires > -1 & DIRECT_A1D_ELEM(AA_counter, ires) > 0 && DIRECT_A1D_ELEM(op.power_imgs[ipart], ires) > 0){
+		if(ires > -1 && DIRECT_A1D_ELEM(AA_counter, ires) > 0 && DIRECT_A1D_ELEM(op.power_imgs[ipart], ires) > 0){
 			RFLOAT scale = (DIRECT_A1D_ELEM(AA_spectrum, ires))*sqrt(DIRECT_A1D_ELEM(op.power_imgs[ipart], ires)/DIRECT_A1D_ELEM(AA_counter, ires));
 			scale = 1./scale;
 			old_correlation += wdiff2s_XA[j]*Fctf.data[j]*scale;
@@ -4273,7 +4279,7 @@ void refineCTFNewton(CTF& new_ctf, MlOptimiser* baseMLO, OptimisationParamters &
 		//summing gradients and hessian
 		for (long int j = 0; j < image_size; j++) {
 			int ires = DIRECT_MULTIDIM_ELEM(baseMLO->Mresol_fine, j);
-			if(ires > -1 & DIRECT_A1D_ELEM(AA_counter, ires) > 0 && DIRECT_A1D_ELEM(op.power_imgs[ipart], ires) > 0){
+			if(ires > -1 && DIRECT_A1D_ELEM(AA_counter, ires) > 0 && DIRECT_A1D_ELEM(op.power_imgs[ipart], ires) > 0){
 				//RFLOAT ctf_scale = DIRECT_A1D_ELEM(ctf_spectrum, ires);
 				//RFLOAT ctf_scale2 = ctf_scale*ctf_scale;
 				RFLOAT scale = (DIRECT_A1D_ELEM(AA_spectrum, ires))*sqrt(DIRECT_A1D_ELEM(op.power_imgs[ipart], ires)/DIRECT_A1D_ELEM(AA_counter, ires));
@@ -4509,7 +4515,7 @@ void refineCTFNewton(CTF& new_ctf, MlOptimiser* baseMLO, OptimisationParamters &
 	for (long int j = 0; j < image_size; j++) {
 											
 		int ires = DIRECT_MULTIDIM_ELEM(baseMLO->Mresol_fine, j);
-		if(ires > -1 & DIRECT_A1D_ELEM(AA_counter, ires) > 0 && DIRECT_A1D_ELEM(op.power_imgs[ipart], ires) > 0){
+		if(ires > -1 && DIRECT_A1D_ELEM(AA_counter, ires) > 0 && DIRECT_A1D_ELEM(op.power_imgs[ipart], ires) > 0){
 			RFLOAT scale = (DIRECT_A1D_ELEM(AA_spectrum, ires))*sqrt(DIRECT_A1D_ELEM(op.power_imgs[ipart], ires)/DIRECT_A1D_ELEM(AA_counter, ires));
 			scale = 1./scale;
 			//RFLOAT ctf_scale = DIRECT_A1D_ELEM(ctf_spectrum, ires);

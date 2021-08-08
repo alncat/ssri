@@ -141,6 +141,8 @@ void Projector::computeFourierTransformMap(MultidimArray<RFLOAT> &vol_in, Multid
 	default:
 	   REPORT_ERROR("Projector::computeFourierTransformMap%%ERROR: Dimension of the data array should be 2 or 3");
 	}
+    //take square root of norm fft since we are using normalised fft
+    //normfft = sqrt(normfft);
 	TIMING_TOC(TIMING_INIT1);
 
 	TIMING_TIC(TIMING_GRID);

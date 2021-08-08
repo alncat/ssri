@@ -338,7 +338,11 @@ public:
     /// The dimensions of the result array should have been set correctly already
     void getFftwImage(MultidimArray < RFLOAT > &result, int orixdim, int oriydim, RFLOAT angpix,
     		bool do_abs = false, bool do_only_flip_phases = false, bool do_intact_until_first_peak = false, bool do_damping = true);
-    /// Generate (Fourier-space, i.e. FFTW format) image with all CTF values.
+    
+    void getFftwImage(MultidimArray < float > &result, int orixdim, int oriydim, RFLOAT angpix,
+    		bool do_abs = false, bool do_only_flip_phases = false, bool do_intact_until_first_peak = false, bool do_damping = true);
+
+    /// Generate (Fourier-space, i.e. FFTW format) image and gradients with all CTF values.
     /// The dimensions of the result array should have been set correctly already
     void getFftwImageandGrads(MultidimArray < RFLOAT > &result, MultidimArray<RFLOAT>& grad_u, MultidimArray<RFLOAT>& grad_v, MultidimArray<RFLOAT>& grad_t, MultidimArray<RFLOAT>& hessian_u, MultidimArray<RFLOAT>& hessian_v, MultidimArray<RFLOAT>& hessian_uv, MultidimArray<RFLOAT>& hessian_t, MultidimArray<RFLOAT>& hessian_tu, MultidimArray<RFLOAT>& hessian_tv, int orixdim, int oriydim, RFLOAT angpix,
     		bool do_abs = false, bool do_only_flip_phases = false, bool do_intact_until_first_peak = false, bool do_damping = true);

@@ -892,6 +892,12 @@ void MlModel::setFourierTransformMaps(bool update_tau2_spectra, int nr_threads, 
 			Irefp = Iref[iclass];
 		}
 
+        //{
+        //    Image<RFLOAT> Itmp;
+        //    Itmp() = Iref[iclass];
+        //    Itmp.write("tmp_img.mrc");
+        //}
+
 		if(PPrefRank.size() > 1)
 			do_heavy = PPrefRank[iclass];
 
@@ -905,6 +911,12 @@ void MlModel::setFourierTransformMaps(bool update_tau2_spectra, int nr_threads, 
         	MultidimArray<RFLOAT> dummy;
         	PPref[iclass].computeFourierTransformMap(Irefp, dummy, current_size, nr_threads, true, do_heavy);
         }
+        
+        //{
+        //    Image<RFLOAT> Itmp;
+        //    Itmp() = Iref[iclass];
+        //    Itmp.write("tmp_img1.mrc");
+        //}
     }
 
 }
