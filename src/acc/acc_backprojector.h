@@ -29,7 +29,7 @@ public:
 	size_t allocaton_size;
 	size_t voxelCount;
 
-	XFLOAT *d_mdlReal, *d_mdlImag, *d_mdlWeight;
+	XFLOAT *d_mdlReal, *d_mdlImag, *d_mdlWeight, *d_mdlVar, *d_mdlWeightNorm;
 
 	cudaStream_t stream;
 
@@ -41,7 +41,7 @@ public:
 				maxR(0), maxR2(0),
 				padding_factor(0),
 				allocaton_size(0), voxelCount(0),
-				d_mdlReal(NULL), d_mdlImag(NULL), d_mdlWeight(NULL),
+				d_mdlReal(NULL), d_mdlImag(NULL), d_mdlWeight(NULL), d_mdlVar(NULL), d_mdlWeightNorm(NULL),
 				stream(0)
 #ifndef CUDA
 				, mutexes(0)
@@ -76,6 +76,7 @@ public:
 			cudaStream_t optStream);
 
 	void getMdlData(XFLOAT *real, XFLOAT *imag, XFLOAT * weights);
+    void getMdlData(XFLOAT *real, XFLOAT *imag, XFLOAT * weights, XFLOAT * var, XFLOAT * weight_norm);
 	void getMdlDataPtrs(XFLOAT *& real, XFLOAT *& imag, XFLOAT *& weights);
 
 	void setStream(cudaStream_t s) { stream = s; }

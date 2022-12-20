@@ -993,9 +993,7 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
                                 RFLOAT tv_alpha,
                                 RFLOAT tv_beta,
                                 RFLOAT tv_weight,
-                                void* devBundle,
-                                RFLOAT tv_eps,
-                                RFLOAT tv_epsp)
+                                void* devBundle)
 {
 
 #ifdef TIMING
@@ -1043,10 +1041,10 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
             int r2 = k*k + i*i + j*j;
             if(r2 <= max_r2) {
                 //prevent extremly small weight
-                A3D_ELEM(weight_norm, k, i, j) = std::max(A3D_ELEM(weight_norm, k, i, j), 1e-5);
+                //A3D_ELEM(weight_norm, k, i, j) = std::max(A3D_ELEM(weight_norm, k, i, j), 1e-5);
                 //get inverse variance
-                A3D_ELEM(variance, k, i, j) /= A3D_ELEM(weight_norm, k, i, j);
-                A3D_ELEM(variance, k, i, j) = 1./std::max(A3D_ELEM(variance, k, i, j), 1e-6);
+                A3D_ELEM(variance, k, i, j) /= normalise;//A3D_ELEM(weight_norm, k, i, j);
+                //A3D_ELEM(variance, k, i, j) = 1./std::max(A3D_ELEM(variance, k, i, j), 1e-6);
                 //A3D_ELEM(weight, k, i, j) *= A3D_ELEM(variance, k, i, j);
                 //A3D_ELEM(data, k, i, j) *= A3D_ELEM(variance, k, i, j);
             }
@@ -1381,10 +1379,10 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
         //omp_set_num_threads(nr_threads);
         RFLOAT resi = 0.;
         RFLOAT resi_v = 0.;
-        RFLOAT eps = tv_eps; //0.015;
+        RFLOAT eps = 0.04;
 
         if(devBundle){
-            cuda_lasso(fsc143, tv_iters, l_r, mu, tv_alpha, tv_beta, eps, Mout, Fweight, Ftest_conv, Ftest_weight, vol_out, (MlDeviceBundle*) devBundle, ref_dim, avg_Fweight, normalise, true, tv_weight, tv_epsp);
+            cuda_lasso(fsc143, tv_iters, l_r, mu, tv_alpha, tv_beta, eps, Mout, Fweight, Ftest_conv, Ftest_weight, vol_out, (MlDeviceBundle*) devBundle, ref_dim, avg_Fweight, normalise, true, tv_weight);
         }
         //window map
         CenterFFT(vol_out,true);

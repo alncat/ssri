@@ -877,7 +877,7 @@ void MlModel::initialiseDigammaVar(int newsize, RFLOAT v0, RFLOAT coarse_size)
                 DIRECT_MULTIDIM_ELEM(digamma_var[iclass],j) = 0.5*val ;//- float(coarse_size*coarse_size)/(4.*DIRECT_MULTIDIM_ELEM(pdf_direction[iclass],j)+4.);
                 //std::cout << DIRECT_MULTIDIM_ELEM(digamma_var[iclass],j) << std::endl;
             }
-            std::cout << min_pdf << " " << max_pdf << " " << sqrt(avg_pdf/newsize) << std::endl;
+            //std::cout << min_pdf << " " << max_pdf << " " << sqrt(avg_pdf/newsize) << std::endl;
         }
     }
 }

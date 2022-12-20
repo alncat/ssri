@@ -1074,8 +1074,25 @@ void getAllSquaredDifferencesCoarse(
 
 		corr_img.allAlloc();
 
-		buildCorrImage(baseMLO,op,corr_img,ipart,group_id, false);
+		buildCorrImage(baseMLO,op,corr_img,ipart,group_id, true);
 		corr_img.cpToDevice();
+
+        /*======================================================
+		                       MINVSIGMA
+		======================================================*/
+
+		AccPtr<XFLOAT> Minvsigma2s = ptrFactory.make<XFLOAT>((size_t)image_size);
+		Minvsigma2s.allAlloc();
+
+		if (baseMLO->do_map)
+			for (unsigned long i = 0; i < image_size; i++)
+				Minvsigma2s[i] = 1./op.local_Minvsigma2s[ipart].data[i];
+		else
+			for (unsigned long i = 0; i < image_size; i++)
+				Minvsigma2s[i] = 1;
+
+		Minvsigma2s.cpToDevice();
+
 
 		deviceInitValue<XFLOAT>(allWeights, (XFLOAT) (op.highres_Xi2_imgs[ipart] / 2.));
 		allWeights_pos = 0;
@@ -1105,7 +1122,7 @@ void getAllSquaredDifferencesCoarse(
 						~trans_y,
 						~trans_z,
 						~corr_img,
-                        //nullptr,//use this placeholder to toggle 3d variance
+                        ~Minvsigma2s,//use this placeholder to toggle 3d variance
 						~Fimg_real,
 						~Fimg_imag,
 						~projectorPlans[iclass].eulers,
@@ -1281,7 +1298,23 @@ void getAllSquaredDifferencesFine(
 		AccPtr<XFLOAT> corr_img = ptrFactory.make<XFLOAT>((size_t)image_size);
 
 		corr_img.allAlloc();
-		buildCorrImage(baseMLO,op,corr_img,ipart,group_id, false);
+		buildCorrImage(baseMLO,op,corr_img,ipart,group_id, true);
+
+        /*======================================================
+		                       MINVSIGMA
+		======================================================*/
+
+		AccPtr<XFLOAT> Minvsigma2s = ptrFactory.make<XFLOAT>((size_t)image_size);
+		Minvsigma2s.allAlloc();
+
+		if (baseMLO->do_map)
+			for (unsigned long i = 0; i < image_size; i++)
+				Minvsigma2s[i] = 1./op.local_Minvsigma2s[ipart].data[i];
+		else
+			for (unsigned long i = 0; i < image_size; i++)
+				Minvsigma2s[i] = 1;
+
+		Minvsigma2s.cpToDevice();
 
 		trans_x.cpToDevice();
 		trans_y.cpToDevice();
@@ -1443,7 +1476,7 @@ void getAllSquaredDifferencesFine(
 				runDiff2KernelFine(
 						projKernel,
 						~corr_img,
-                        //nullptr,//placeholder for 3d variance
+                        ~Minvsigma2s,//placeholder for 3d variance
 						~Fimg_real,
 						~Fimg_imag,
 						~trans_x,
@@ -2730,7 +2763,7 @@ void storeWeightedSums(OptimisationParamters &op, SamplingParameters &sp,
 					op.local_Minvsigma2s[0].xdim-1);
 
 			runWavgKernel(
-                    //accMLO->bundle->backprojectors[iproj], //variance
+                    //accMLO->bundle->backprojectors[iproj],
 					projKernel,
 					~eulers[iclass],
 					~Fimgs_real,

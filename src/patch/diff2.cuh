@@ -226,7 +226,7 @@ __global__ void cuda_kernel_diff2_coarse(
 	__shared__ XFLOAT s_real[block_sz];
 	__shared__ XFLOAT s_imag[block_sz];
 	__shared__ XFLOAT s_corr[block_sz];
-    //__shared__ XFLOAT s_sigma2[block_sz];
+    __shared__ XFLOAT s_sigma2[block_sz];
 
 	XFLOAT diff2s[eulers_per_block] = {0.f};
 
@@ -310,7 +310,7 @@ __global__ void cuda_kernel_diff2_coarse(
 			s_real[tid] = g_real[init_pixel + tid];
 			s_imag[tid] = g_imag[init_pixel + tid];
 			s_corr[tid] = g_corr[init_pixel + tid] / 2;
-            //s_sigma2[tid] = minvsigma2[init_pixel + tid];
+            s_sigma2[tid] = minvsigma2[init_pixel + tid];
         }
 
 		__syncthreads();
@@ -354,7 +354,7 @@ __global__ void cuda_kernel_diff2_coarse(
 				XFLOAT diff_real =  s_ref_real[eulers_per_block * i + j] - real;
 				XFLOAT diff_imag =  s_ref_imag[eulers_per_block * i + j] - imag;
                 //if(s_ref_var[eulers_per_block*i + j])
-                diff2s[j] += (diff_real * diff_real + diff_imag * diff_imag) * s_corr[i + init_pixel % block_sz] * s_ref_var[eulers_per_block*i + j];
+                diff2s[j] += (diff_real * diff_real + diff_imag * diff_imag) * s_corr[i + init_pixel % block_sz] / (s_sigma2[i + init_pixel % block_sz] + s_ref_var[eulers_per_block*i + j]);
 			    //else
                 //    diff2s[j] += (diff_real * diff_real + diff_imag * diff_imag) * s_corr[i + init_pixel % block_sz] * s_sigma2[i + init_pixel % block_sz];
             }
@@ -455,7 +455,7 @@ __global__ void cuda_kernel_diff2_fine(
 				if(DATA3D)
 					projector.project3Dmodel(
 						x,y,z,
-						__ldg(&g_eulers[ix*9  ]), __ldg(&g_eulers[ix*9+1]), __ldg(&g_eulers[ix*9+2]),
+						__ldg(&g_eulees[ix*9  ]), __ldg(&g_eulers[ix*9+1]), __ldg(&g_eulers[ix*9+2]),
 						__ldg(&g_eulers[ix*9+3]), __ldg(&g_eulers[ix*9+4]), __ldg(&g_eulers[ix*9+5]),
 						__ldg(&g_eulers[ix*9+6]), __ldg(&g_eulers[ix*9+7]), __ldg(&g_eulers[ix*9+8]),
 						ref_real, ref_imag);
@@ -486,7 +486,7 @@ __global__ void cuda_kernel_diff2_fine(
 					diff_real =  ref_real - shifted_real;
 					diff_imag =  ref_imag - shifted_imag;
                     //if(ref_var)
-				    s[itrans*block_sz + tid] += (diff_real * diff_real + diff_imag * diff_imag) * (XFLOAT)0.5 * __ldg(&g_corr_img[pixel]) * ref_var;
+				    s[itrans*block_sz + tid] += (diff_real * diff_real + diff_imag * diff_imag) * (XFLOAT)0.5 * __ldg(&g_corr_img[pixel]) / (__ldg(&minvsigma2[pixel]) + ref_var);
 				    //else
                     //    s[itrans*block_sz + tid] += (diff_real * diff_real + diff_imag * diff_imag) * (XFLOAT)0.5 * __ldg(&g_corr_img[pixel]) * __ldg(&minvsigma2[pixel]);
                 }

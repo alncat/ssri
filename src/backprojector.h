@@ -38,6 +38,8 @@ class BackProjector: public Projector
 public:
 	// For backward projection: sum of weights
 	MultidimArray<RFLOAT> weight;
+    //store sum of probability for each grid
+    MultidimArray<RFLOAT> weight_norm;
 //store test data
     MultidimArray<RFLOAT> test_weight;	// Tabulated blob values
     MultidimArray<Complex> test_data; 	TabFtBlob tab_ftblob;
@@ -142,6 +144,7 @@ public:
         	skip_gridding = op.skip_gridding;
         	// BackProjector stuff
         	weight = op.weight;
+            weight_norm = op.weight_norm;//MOD
         	tab_ftblob = op.tab_ftblob;
         	SL = op.SL;
         }
@@ -165,6 +168,7 @@ public:
 	{
 		skip_gridding = false;
 		weight.clear();
+        weight_norm.clear();
 		Projector::clear();
 	}
 
@@ -318,7 +322,9 @@ public:
                      RFLOAT tv_alpha = 1,
                      RFLOAT tv_beta = 1,
                      RFLOAT tv_weight = 1,
-                     void* devBundle = NULL);
+                     void* devBundle = NULL,
+                     RFLOAT tv_eps = 0.01,
+                     RFLOAT tv_epsp = 0.01);
 
 	/*  Enforce Hermitian symmetry, apply helical symmetry as well as point-group symmetry
 	 */

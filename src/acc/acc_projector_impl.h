@@ -36,23 +36,26 @@ bool AccProjector::setMdlDim(
 
 	mdlReal = new cudaTextureObject_t();
 	mdlImag = new cudaTextureObject_t();
+    mdlVar  = new cudaTextureObject_t();
 
 	// create channel to describe data type (bits,bits,bits,bits,type)
 	cudaChannelFormatDesc desc;
 
 	desc = cudaCreateChannelDesc(32, 0, 0, 0, cudaChannelFormatKindFloat);
 
-	struct cudaResourceDesc resDesc_real, resDesc_imag;
+	struct cudaResourceDesc resDesc_real, resDesc_imag, resDesc_var;
 	struct cudaTextureDesc  texDesc;
 	// -- Zero all data in objects handlers
 	memset(&resDesc_real, 0, sizeof(cudaResourceDesc));
 	memset(&resDesc_imag, 0, sizeof(cudaResourceDesc));
+    memset(&resDesc_var, 0, sizeof(cudaResourceDesc));
 	memset(&texDesc, 0, sizeof(cudaTextureDesc));
 
 	if(mdlZ!=0)  // 3D model
 	{
 		texArrayReal = new cudaArray_t();
 		texArrayImag = new cudaArray_t();
+        texArrayVar  = new cudaArray_t();
 
 		// -- make extents for automatic pitch:ing (aligment) of allocated 3D arrays
 		cudaExtent volumeSize = make_cudaExtent(mdlX, mdlY, mdlZ);
@@ -61,12 +64,15 @@ bool AccProjector::setMdlDim(
 		// -- Allocate and copy data using very clever CUDA memcpy-functions
 		HANDLE_ERROR(cudaMalloc3DArray(texArrayReal, &desc, volumeSize));
 		HANDLE_ERROR(cudaMalloc3DArray(texArrayImag, &desc, volumeSize));
+        HANDLE_ERROR(cudaMalloc3DArray(texArrayVar, &desc, volumeSize));
 
 		// -- Descriptors of the channel(s) in the texture(s)
 		resDesc_real.res.array.array = *texArrayReal;
 		resDesc_imag.res.array.array = *texArrayImag;
+        resDesc_var.res.array.array = *texArrayVar;
 		resDesc_real.resType = cudaResourceTypeArray;
 		resDesc_imag.resType = cudaResourceTypeArray;
+        resDesc_var.resType = cudaResourceTypeArray;
 	}
 	else // 2D model
 	{
@@ -100,11 +106,14 @@ bool AccProjector::setMdlDim(
 	// -- Create texture object(s)
 	HANDLE_ERROR(cudaCreateTextureObject(mdlReal, &resDesc_real, &texDesc, NULL));
 	HANDLE_ERROR(cudaCreateTextureObject(mdlImag, &resDesc_imag, &texDesc, NULL));
+    //MOD: create variance object if it is a 3D model
+    if(mdlZ != 0) HANDLE_ERROR(cudaCreateTextureObject(mdlVar, &resDesc_var, &texDesc, NULL));
 
 #else
 #ifdef CUDA
 	DEBUG_HANDLE_ERROR(cudaMalloc( (void**) &mdlReal, mdlXYZ * sizeof(XFLOAT)));
 	DEBUG_HANDLE_ERROR(cudaMalloc( (void**) &mdlImag, mdlXYZ * sizeof(XFLOAT)));
+    if(mdlZ != 0) DEBUG_HANDLE_ERROR(cudaMalloc( (void**) &mdlVar, mdlXYZ * sizeof(XFLOAT)));
 #else
 	mdlComplex = NULL;
 #endif
@@ -171,6 +180,69 @@ void AccProjector::initMdl(XFLOAT *real, XFLOAT *imag)
 
 }
 
+void AccProjector::initMdl(XFLOAT *real, XFLOAT *imag, XFLOAT *var)
+{
+#ifdef DEBUG_CUDA
+	if (mdlXYZ == 0)
+	{
+        printf("DEBUG_ERROR: Model dimensions must be set with setMdlDim before call to setMdlData.");
+		CRITICAL(ERR_MDLDIM);
+	}
+#ifdef CUDA
+	if (mdlReal == NULL)
+	{
+        printf("DEBUG_ERROR: initMdl called before call to setMdlData.");
+		CRITICAL(ERR_MDLSET);
+	}
+#else
+	if (mdlComplex == NULL)
+	{
+        printf("DEBUG_ERROR: initMdl called before call to setMdlData.");
+		CRITICAL(ERR_MDLSET);
+	}
+#endif
+#endif
+
+#ifndef PROJECTOR_NO_TEXTURES
+	if(mdlZ!=0)  // 3D model
+	{
+		// -- make extents for automatic pitching (aligment) of allocated 3D arrays
+		cudaMemcpy3DParms copyParams = {0};
+		copyParams.extent = make_cudaExtent(mdlX, mdlY, mdlZ);
+		copyParams.kind   = cudaMemcpyHostToDevice;
+
+		// -- Copy data
+		copyParams.dstArray = *texArrayReal;
+		copyParams.srcPtr   = make_cudaPitchedPtr(real, mdlX * sizeof(XFLOAT), mdlY, mdlZ);
+		DEBUG_HANDLE_ERROR(cudaMemcpy3D(&copyParams));
+		copyParams.dstArray = *texArrayImag;
+		copyParams.srcPtr   = make_cudaPitchedPtr(imag, mdlX * sizeof(XFLOAT), mdlY, mdlZ);
+        DEBUG_HANDLE_ERROR(cudaMemcpy3D(&copyParams));
+        copyParams.dstArray = *texArrayVar;
+		copyParams.srcPtr   = make_cudaPitchedPtr(var, mdlX * sizeof(XFLOAT), mdlY, mdlZ);
+		DEBUG_HANDLE_ERROR(cudaMemcpy3D(&copyParams));
+	}
+	else // 2D model
+	{
+		DEBUG_HANDLE_ERROR(cudaMemcpy2D(texArrayReal2D, pitch2D, real, sizeof(XFLOAT) * mdlX, sizeof(XFLOAT) * mdlX, mdlY, cudaMemcpyHostToDevice));
+		DEBUG_HANDLE_ERROR(cudaMemcpy2D(texArrayImag2D, pitch2D, imag, sizeof(XFLOAT) * mdlX, sizeof(XFLOAT) * mdlX, mdlY, cudaMemcpyHostToDevice));
+	}
+#else
+#ifdef CUDA
+	DEBUG_HANDLE_ERROR(cudaMemcpy( mdlReal, real, mdlXYZ * sizeof(XFLOAT), cudaMemcpyHostToDevice));
+	DEBUG_HANDLE_ERROR(cudaMemcpy( mdlImag, imag, mdlXYZ * sizeof(XFLOAT), cudaMemcpyHostToDevice));
+    DEBUG_HANDLE_ERROR(cudaMemcpy( mdlVar,  var, mdlXYZ * sizeof(XFLOAT), cudaMemcpyHostToDevice));
+#else
+	std::complex<XFLOAT> *pData = mdlComplex;
+    for(size_t i=0; i<mdlXYZ; i++) {
+		std::complex<XFLOAT> arrayval(*real ++, *imag ++);
+		pData[i] = arrayval;		        
+    }
+#endif
+#endif
+
+}
+
 #ifndef CUDA
 void AccProjector::initMdl(std::complex<XFLOAT> *data)
 {
@@ -199,6 +271,30 @@ void AccProjector::initMdl(Complex *data)
 	free(tmpImag);
 }
 
+void AccProjector::initMdl(Complex *data, RFLOAT *var)
+{
+	XFLOAT *tmpReal;
+	XFLOAT *tmpImag;
+    XFLOAT *tmpVar;
+	if (posix_memalign((void **)&tmpReal, MEM_ALIGN, mdlXYZ * sizeof(XFLOAT))) CRITICAL(RAMERR);
+	if (posix_memalign((void **)&tmpImag, MEM_ALIGN, mdlXYZ * sizeof(XFLOAT))) CRITICAL(RAMERR);
+    if (posix_memalign((void **)&tmpVar, MEM_ALIGN, mdlXYZ * sizeof(XFLOAT))) CRITICAL(RAMERR);
+
+
+	for (size_t i = 0; i < mdlXYZ; i ++)
+	{
+		tmpReal[i] = (XFLOAT) data[i].real;
+		tmpImag[i] = (XFLOAT) data[i].imag;
+        tmpVar[i]  = (XFLOAT) var[i];
+	}
+
+	initMdl(tmpReal, tmpImag, tmpVar);
+
+	free(tmpReal);
+	free(tmpImag);
+    free(tmpVar);
+}
+
 void AccProjector::clear()
 {
 	mdlX = 0;
@@ -217,15 +313,19 @@ void AccProjector::clear()
 #ifndef PROJECTOR_NO_TEXTURES
 		cudaDestroyTextureObject(*mdlReal);
 		cudaDestroyTextureObject(*mdlImag);
+        cudaDestroyTextureObject(*mdlVar);
 		delete mdlReal;
 		delete mdlImag;
+        delete mdlVar;
 
 		if(mdlZ!=0) //3D case
 		{
 			cudaFreeArray(*texArrayReal);
 			cudaFreeArray(*texArrayImag);
+            cudaFreeArray(*texArrayVar);
 			delete texArrayReal;
 			delete texArrayImag;
+            delete texArrayVar;
 		}
 		else //2D case
 		{
@@ -235,12 +335,15 @@ void AccProjector::clear()
 
 		texArrayReal = 0;
 		texArrayImag = 0;
+        texArrayVar  = 0;
 #else
 		cudaFree(mdlReal);
 		cudaFree(mdlImag);
+        cudaFree(mdlVar);
 #endif
 		mdlReal = 0;
 		mdlImag = 0;
+        mdlVar  = 0;
 	}
 #else // ifdef CUDA
 	if ((mdlComplex != NULL) && (externalFree == 0))

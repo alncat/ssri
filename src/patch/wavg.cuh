@@ -163,6 +163,7 @@ __global__ void cuda_kernel_wavg(
 		XFLOAT *g_trans_y,
 		XFLOAT *g_trans_z,
 		XFLOAT* g_weights,
+        XFLOAT* g_Minvsigma2s,
 		XFLOAT* g_ctfs,
 		XFLOAT *g_wdiff2s_parts,
 		XFLOAT *g_wdiff2s_AA,
@@ -257,10 +258,14 @@ __global__ void cuda_kernel_wavg(
 					s_eulers[3], s_eulers[4],
 					ref_real, ref_imag);
 
+            XFLOAT ctf, minvsigma2;
+            minvsigma2 = __ldg(&g_Minvsigma2s[pixel]);
+
 			if (REFCTF)
 			{
-				ref_real *= __ldg(&g_ctfs[pixel]);
-				ref_imag *= __ldg(&g_ctfs[pixel]);
+                ctf = __ldg(&g_ctfs[pixel]);
+				ref_real *= ctf;//__ldg(&g_ctfs[pixel]);
+				ref_imag *= ctf;//__ldg(&g_ctfs[pixel]);
 			}
 			else
 			{
@@ -287,7 +292,7 @@ __global__ void cuda_kernel_wavg(
 
 					XFLOAT diff_real = ref_real - trans_real;
 					XFLOAT diff_imag = ref_imag - trans_imag;
-                    tot_weight += weight;
+                    tot_weight += weight * weight * (diff_real*diff_real + diff_imag*diff_imag);
 
 					s_wdiff2s_parts[tid] += weight * (diff_real*diff_real + diff_imag*diff_imag);
 
@@ -303,6 +308,8 @@ __global__ void cuda_kernel_wavg(
             if(tot_weight > 0.){
                 if ( ( x * x + y * y ) > max_r2)
 				continue;
+                tot_weight *= ctf * ctf;
+                tot_weight *= minvsigma2 * minvsigma2;
 
                 XFLOAT xp,yp,zp;
                 if(DATA3D)
@@ -346,43 +353,43 @@ __global__ void cuda_kernel_wavg(
 
                 XFLOAT dd000 = mfz * mfy * mfx;
 
-                cuda_atomic_add(&g_model_var  [z0 * mdl_x * mdl_y + y0 * mdl_x + x0], dd000 * s_wdiff2s_parts[tid]);
-                cuda_atomic_add(&g_model_weight[z0 * mdl_x * mdl_y + y0 * mdl_x + x0], dd000 * tot_weight);
+                cuda_atomic_add(&g_model_var  [z0 * mdl_x * mdl_y + y0 * mdl_x + x0], dd000 * tot_weight);
+                //cuda_atomic_add(&g_model_weight[z0 * mdl_x * mdl_y + y0 * mdl_x + x0], dd000 * tot_weight);
 
                 XFLOAT dd001 = mfz * mfy *  fx;
 
-                cuda_atomic_add(&g_model_var  [z0 * mdl_x * mdl_y + y0 * mdl_x + x1], dd001 * s_wdiff2s_parts[tid]);
-                cuda_atomic_add(&g_model_weight[z0 * mdl_x * mdl_y + y0 * mdl_x + x1], dd001 * tot_weight);
+                cuda_atomic_add(&g_model_var  [z0 * mdl_x * mdl_y + y0 * mdl_x + x1], dd001 * tot_weight);
+                //cuda_atomic_add(&g_model_weight[z0 * mdl_x * mdl_y + y0 * mdl_x + x1], dd001 * tot_weight);
 
                 XFLOAT dd010 = mfz *  fy * mfx;
 
-                cuda_atomic_add(&g_model_var  [z0 * mdl_x * mdl_y + y1 * mdl_x + x0], dd010 * s_wdiff2s_parts[tid]);
-                cuda_atomic_add(&g_model_weight[z0 * mdl_x * mdl_y + y1 * mdl_x + x0], dd010 * tot_weight);
+                cuda_atomic_add(&g_model_var  [z0 * mdl_x * mdl_y + y1 * mdl_x + x0], dd010 * tot_weight);
+                //cuda_atomic_add(&g_model_weight[z0 * mdl_x * mdl_y + y1 * mdl_x + x0], dd010 * tot_weight);
 
                 XFLOAT dd011 = mfz *  fy *  fx;
 
-                cuda_atomic_add(&g_model_var  [z0 * mdl_x * mdl_y + y1 * mdl_x + x1], dd011 * s_wdiff2s_parts[tid]);
-                cuda_atomic_add(&g_model_weight[z0 * mdl_x * mdl_y + y1 * mdl_x + x1], dd011 * tot_weight);
+                cuda_atomic_add(&g_model_var  [z0 * mdl_x * mdl_y + y1 * mdl_x + x1], dd011 * tot_weight);
+                //cuda_atomic_add(&g_model_weight[z0 * mdl_x * mdl_y + y1 * mdl_x + x1], dd011 * tot_weight);
 
                 XFLOAT dd100 =  fz * mfy * mfx;
 
-                cuda_atomic_add(&g_model_var  [z1 * mdl_x * mdl_y + y0 * mdl_x + x0], dd100 * s_wdiff2s_parts[tid]);
-                cuda_atomic_add(&g_model_weight[z1 * mdl_x * mdl_y + y0 * mdl_x + x0], dd100 * tot_weight);
+                cuda_atomic_add(&g_model_var  [z1 * mdl_x * mdl_y + y0 * mdl_x + x0], dd100 * tot_weight);
+                //cuda_atomic_add(&g_model_weight[z1 * mdl_x * mdl_y + y0 * mdl_x + x0], dd100 * tot_weight);
 
                 XFLOAT dd101 =  fz * mfy *  fx;
 
-                cuda_atomic_add(&g_model_var  [z1 * mdl_x * mdl_y + y0 * mdl_x + x1], dd101 * s_wdiff2s_parts[tid]);
-                cuda_atomic_add(&g_model_weight[z1 * mdl_x * mdl_y + y0 * mdl_x + x1], dd101 * tot_weight);
+                cuda_atomic_add(&g_model_var  [z1 * mdl_x * mdl_y + y0 * mdl_x + x1], dd101 * tot_weight);
+                //cuda_atomic_add(&g_model_weight[z1 * mdl_x * mdl_y + y0 * mdl_x + x1], dd101 * tot_weight);
 
                 XFLOAT dd110 =  fz *  fy * mfx;
 
-                cuda_atomic_add(&g_model_var  [z1 * mdl_x * mdl_y + y1 * mdl_x + x0], dd110 * s_wdiff2s_parts[tid]);
-                cuda_atomic_add(&g_model_weight[z1 * mdl_x * mdl_y + y1 * mdl_x + x0], dd110 * tot_weight);
+                cuda_atomic_add(&g_model_var  [z1 * mdl_x * mdl_y + y1 * mdl_x + x0], dd110 * tot_weight);
+                //cuda_atomic_add(&g_model_weight[z1 * mdl_x * mdl_y + y1 * mdl_x + x0], dd110 * tot_weight);
 
                 XFLOAT dd111 =  fz *  fy *  fx;
 
-                cuda_atomic_add(&g_model_var  [z1 * mdl_x * mdl_y + y1 * mdl_x + x1], dd111 * s_wdiff2s_parts[tid]);
-                cuda_atomic_add(&g_model_weight[z1 * mdl_x * mdl_y + y1 * mdl_x + x1], dd111 * tot_weight);
+                cuda_atomic_add(&g_model_var  [z1 * mdl_x * mdl_y + y1 * mdl_x + x1], dd111 * tot_weight);
+                //cuda_atomic_add(&g_model_weight[z1 * mdl_x * mdl_y + y1 * mdl_x + x1], dd111 * tot_weight);
             }
 
         }

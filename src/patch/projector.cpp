@@ -268,7 +268,8 @@ void Projector::computeFourierTransformMap(MultidimArray<RFLOAT> &vol_in, Multid
             int ires = ROUND( sqrt((RFLOAT)r2) / padding_factor );
             if(j > FINISHINGX(old_variance) || i > FINISHINGY(old_variance) 
                     || i < STARTINGY(old_variance) || k > FINISHINGZ(old_variance) || k < STARTINGZ(old_variance))
-                A3D_ELEM(variance, k, i, j) = 1./std::max(DIRECT_A1D_ELEM(power_spectrum, ires), power_spectrum_avg);
+                //A3D_ELEM(variance, k, i, j) = 1./std::max(DIRECT_A1D_ELEM(power_spectrum, ires), power_spectrum_avg);
+                A3D_ELEM(variance, k, i, j) = 0.;
             //A3D_ELEM(variance_coarse, int(k/padding_factor), int(i/padding_factor), int(j/padding_factor)) = A3D(variance, k, i, j);
         }
     }

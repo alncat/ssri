@@ -1471,7 +1471,7 @@ void MlOptimiserMpi::expectation()
 						XFLOAT *imags = new XFLOAT[s];
 						XFLOAT *weights = new XFLOAT[s];
                         XFLOAT *variance = new XFLOAT[s];
-                        XFLOAT *weight_norm = new XFLOAT[s];
+                        //XFLOAT *weight_norm = new XFLOAT[s];
 
 						b->backprojectors[j].getMdlData(reals, imags, weights, variance, weight_norm);
 
@@ -1481,14 +1481,14 @@ void MlOptimiserMpi::expectation()
 							wsum_model.BPref[j].data.data[n].imag += (RFLOAT) imags[n];
 							wsum_model.BPref[j].weight.data[n] += (RFLOAT) weights[n];
                             wsum_model.BPref[j].variance.data[n] += (RFLOAT) variance[n];
-                            wsum_model.BPref[j].weight_norm.data[n] += (RFLOAT) weight_norm[n];
+                            //wsum_model.BPref[j].weight_norm.data[n] += (RFLOAT) weight_norm[n];
 						}
 
 						delete [] reals;
 						delete [] imags;
 						delete [] weights;
                         delete [] variance;
-                        delete [] weight_norm;
+                        //delete [] weight_norm;
 
 						b->projectors[j].clear();
 						b->backprojectors[j].clear();
@@ -2060,8 +2060,8 @@ void MlOptimiserMpi::maximization()
 
     if (do_auto_refine && has_converged) {
         mymodel.tv_iters *= 2;
-        mymodel.tv_alpha *= 1.05;
-        mymodel.tv_beta *= 1.05;
+        mymodel.tv_alpha *= 0.9;
+        mymodel.tv_beta *= 0.9;
     }
 	for (int ibody = 0; ibody < mymodel.nr_bodies; ibody++)
 	{
@@ -2100,7 +2100,7 @@ void MlOptimiserMpi::maximization()
 								mymodel.tau2_fudge_factor, mymodel.tau2_class[ith_recons], mymodel.sigma2_class[ith_recons],
 								mymodel.data_vs_prior_class[ith_recons], mymodel.fourier_coverage_class[ith_recons],
 								mymodel.fsc_halves_class[ibody], wsum_model.pdf_class[iclass], mymodel.tv_iters, 
-								do_split_random_halves, (do_join_random_halves || do_always_join_random_halves), nr_threads, minres_map, &timer, mymodel.do_tv, mymodel.l_r, mymodel.tv_alpha, mymodel.tv_beta, mymodel.tv_weight, devBundle, mymodel.tv_eps, mymodel.tv_epsp);
+								do_split_random_halves, (do_join_random_halves || do_always_join_random_halves), nr_threads, minres_map, &timer, mymodel.do_tv, mymodel.l_r, mymodel.tv_alpha, mymodel.tv_beta, mymodel.tv_weight, devBundle);
 
 						//(wsum_model.BPref[ith_recons]).reconstruct(mymodel.Iref[ith_recons], gridding_nr_iter, do_map,
 						//		mymodel.tau2_fudge_factor, mymodel.tau2_class[ith_recons], mymodel.sigma2_class[ith_recons],
@@ -2112,7 +2112,7 @@ void MlOptimiserMpi::maximization()
 								mymodel.tau2_fudge_factor, mymodel.tau2_class[ith_recons], mymodel.sigma2_class[ith_recons],
 								mymodel.data_vs_prior_class[ith_recons], mymodel.fourier_coverage_class[ith_recons],
 								mymodel.fsc_halves_class[ibody], wsum_model.pdf_class[iclass], mymodel.tv_iters, 
-								do_split_random_halves, (do_join_random_halves || do_always_join_random_halves), nr_threads, minres_map, false, mymodel.do_tv, mymodel.l_r, mymodel.tv_alpha, mymodel.tv_beta, mymodel.tv_weight, devBundle, mymodel.tv_eps, mymodel.tv_epsp);
+								do_split_random_halves, (do_join_random_halves || do_always_join_random_halves), nr_threads, minres_map, false, mymodel.do_tv, mymodel.l_r, mymodel.tv_alpha, mymodel.tv_beta, mymodel.tv_weight, devBundle);
 
 						//(wsum_model.BPref[ith_recons]).reconstruct(mymodel.Iref[ith_recons], gridding_nr_iter, do_map,
 						//		mymodel.tau2_fudge_factor, mymodel.tau2_class[ith_recons], mymodel.sigma2_class[ith_recons],
@@ -2228,7 +2228,7 @@ void MlOptimiserMpi::maximization()
 									mymodel.tau2_fudge_factor, mymodel.tau2_class[ith_recons], mymodel.sigma2_class[ith_recons],
 									mymodel.data_vs_prior_class[ith_recons], mymodel.fourier_coverage_class[ith_recons],
 									mymodel.fsc_halves_class[ibody], wsum_model.pdf_class[iclass], mymodel.tv_iters, 
-									do_split_random_halves, do_join_random_halves, nr_threads, minres_map, false, mymodel.do_tv, mymodel.l_r, mymodel.tv_alpha, mymodel.tv_beta, mymodel.tv_weight, devBundle, mymodel.tv_eps, mymodel.tv_epsp);
+									do_split_random_halves, do_join_random_halves, nr_threads, minres_map, false, mymodel.do_tv, mymodel.l_r, mymodel.tv_alpha, mymodel.tv_beta, mymodel.tv_weight, devBundle);
 
 
 							if (do_sgd)
@@ -3126,8 +3126,8 @@ void MlOptimiserMpi::iterate()
 		mydata.randomiseOriginalParticlesOrder(random_seed+iter, do_split_random_halves,  subset_size < mydata.numberOfOriginalParticles() );
         if(iter != 1){
             if(mymodel.do_tv){
-                mymodel.tv_alpha *= exp(0.04);
-                mymodel.tv_beta *= exp(0.04);
+                mymodel.tv_alpha *= exp(-0.04);
+                mymodel.tv_beta *= exp(-0.04);
                 mymodel.tv_weight *= exp(0.025);
                 //mymodel.tv_iters = mymodel.tv_iters*exp(0.035);
             }

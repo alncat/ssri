@@ -763,18 +763,16 @@ void runBackProjectKernel(
 #endif
 			else
 #ifdef CUDA
-				cuda_kernel_backproject3D<false><<<imageCount,BP_REF3D_BLOCK_SIZE,0,optStream>>>(
-                    //placeholder to enable 3d varaince
-					//projector, 
-                    nullptr,
-                    d_img_real, d_img_imag,
+				cuda_kernel_backprojectSGD<false><<<imageCount,BP_REF3D_BLOCK_SIZE,0,optStream>>>(
+					projector, d_img_real, d_img_imag,
 					trans_x, trans_y, trans_z,
 					d_weights, d_Minvsigma2s, d_ctfs,
 					translation_num, significant_weight, weight_norm, d_eulers,
-					BP.d_mdlReal, BP.d_mdlImag, BP.d_mdlWeight,
+					BP.d_mdlReal, BP.d_mdlImag, BP.d_mdlWeight, BP.d_mdlVar,
 					BP.maxR, BP.maxR2, BP.padding_factor,
 					imgX, imgY, imgZ, imgX*imgY*imgZ,
 					BP.mdlX, BP.mdlY, BP.mdlInitY, 	BP.mdlInitZ);
+
 #else
 #if 1 //TODO Clean this up
 				CpuKernels::backprojectRef3D(imageCount,

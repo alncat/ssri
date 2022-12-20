@@ -3,10 +3,12 @@
 #
 
 set(FFTW_EXTERNAL_PATH "${CMAKE_SOURCE_DIR}/external/fftw")
+message(STATUS "${FFTW_EXTERNAL_PATH}")
 
 if(DoublePrec_CPU)
    # set fftw lib to use double precision
 	set(libfft "fftw3")
+    set(libfftf "fftw3f")
     set(libfft_t "fftw3_threads")
 else(DoublePrec_CPU)
 	# set fftw lib to use single precision
@@ -20,14 +22,19 @@ set(INC_PATHFFT $ENV{FFTW_INCLUDE})
 unset(FFTW_PATH CACHE)
 unset(FFTW_INCLUDES CACHE)
 unset(FFTW_LIBRARIES CACHE)
+unset(FFTW_LIBRARIES_FLOAT CACHE)
 unset(FFTW_LIBRARIES_THREADS CACHE)
 
-find_library(_FFTW_SINGLE  NAMES fftw3f  PATHS ${LIB_PATHFFT} $ENV{FFTW_LIB} $ENV{FFTW_HOME} )
 find_library(FFTW_LIBRARIES  NAMES ${libfft} PATHS ${LIB_PATHFFT} $ENV{FFTW_LIB} $ENV{FFTW_HOME} ) 
+find_library(FFTW_LIBRARIES_FLOAT  NAMES ${libfftf} PATHS ${LIB_PATHFFT} $ENV{FFTW_LIB} $ENV{FFTW_HOME} ) 
 find_library(FFTW_LIBRARIES_THREADS  NAMES ${libfft_t} PATHS ${LIB_PATHFFT} $ENV{FFTW_LIB} $ENV{FFTW_HOME} ) 
 
 if(FFTW_LIBRARIES_THREADS)
-    set(FFTW_LIBRARIES ${FFTW_LIBRARIES} ${FFTW_LIBRARIES_THREADS} ${_FFTW_SINGLE})
+    set(FFTW_LIBRARIES ${FFTW_LIBRARIES} ${FFTW_LIBRARIES_THREADS})
+endif()
+
+if(FFTW_LIBRARIES_FLOAT)
+    set(FFTW_LIBRARIES ${FFTW_LIBRARIES} ${FFTW_LIBRARIES_FLOAT})
 endif()
 
 if(DEFINED ENV{FFTW_INCLUDE})
@@ -44,7 +51,7 @@ if(FFTW_PATH AND FFTW_INCLUDES AND FFTW_LIBRARIES)
 endif(FFTW_PATH AND FFTW_INCLUDES AND FFTW_LIBRARIES)
 
 if (FFTW_FOUND)
-	message(STATUS "Found FFTW: ${libfft} ${libfft_t}")
+	message(STATUS "Found FFTW: ${libfft} ${libfftf} ${libfft_t}")
 	message(STATUS "FFTW_LIBRARIES: ${FFTW_LIBRARIES}")
 else(FFTW_FOUND)
 	if(DoublePrec_CPU)

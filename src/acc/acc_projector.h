@@ -25,15 +25,17 @@ class AccProjector
 #ifndef PROJECTOR_NO_TEXTURES
 
 	XFLOAT *texArrayReal2D, *texArrayImag2D;
-	cudaArray_t *texArrayReal, *texArrayImag;
-	cudaTextureObject_t *mdlReal, *mdlImag;
+	cudaArray_t *texArrayReal, *texArrayImag, *texArrayVar;
+	cudaTextureObject_t *mdlReal, *mdlImag, *mdlVar;
 
 	size_t pitch2D;
 #else
 #ifdef CUDA
 	XFLOAT *mdlReal, *mdlImag;
+    XFLOAT *mdlVar;
 #else
 	std::complex<XFLOAT> *mdlComplex;
+    XFLOAT* mdlVar;
 	int externalFree;
 #endif
 #endif  // PROJECTOR_NO_TEXTURES
@@ -52,15 +54,19 @@ public:
 		texArrayImag2D = 0;
 		texArrayReal = 0;
 		texArrayImag = 0;
+        texArrayVar = 0;
 		mdlReal = 0;
 		mdlImag = 0;
+        mdlVar  = 0;
 		pitch2D = 0;
 #else
 #ifdef CUDA
 		mdlReal = 0;
 		mdlImag = 0;
+        mdlVar  = 0;
 #else
 		mdlComplex = 0;
+        mdlVar     = 0;
 		externalFree = 0;
 #endif
 #endif
@@ -72,7 +78,9 @@ public:
 			int maxr, int paddingFactor);
 
 	void initMdl(XFLOAT *real, XFLOAT *imag);
+    void initMdl(XFLOAT *real, XFLOAT *imag, XFLOAT *var);
 	void initMdl(Complex *data);
+    void initMdl(Complex *data, RFLOAT *var);
 #ifndef CUDA
 	void initMdl(std::complex<XFLOAT> *data);
 #endif

@@ -20,6 +20,7 @@ public:
 
 	PROJECTOR_PTR_TYPE mdlReal;
 	PROJECTOR_PTR_TYPE mdlImag;
+    PROJECTOR_PTR_TYPE mdlVar;
 #ifdef CUDA
 	PROJECTOR_PTR_TYPE mdlComplex;
 #else
@@ -60,6 +61,30 @@ public:
 				padding_factor(padding_factor),
 				maxR(maxR), maxR2(maxR*maxR),
 				mdlReal(mdlReal), mdlImag(mdlImag)
+			{
+#ifndef CUDA		
+				std::complex<XFLOAT> *pData = mdlComplex;
+				for(size_t i=0; i<(size_t)mdlX * (size_t)mdlY * (size_t)mdlZ; i++) {
+					std::complex<XFLOAT> arrayval(*mdlReal ++, *mdlImag ++);
+					pData[i] = arrayval;		        
+				}
+#endif
+			};
+    
+    AccProjectorKernel(
+			int mdlX, int mdlY, int mdlZ,
+			int imgX, int imgY, int imgZ,
+			int mdlInitY, int mdlInitZ,
+			int padding_factor,
+			int maxR,
+			PROJECTOR_PTR_TYPE mdlReal, PROJECTOR_PTR_TYPE mdlImag, PROJECTOR_PTR_TYPE mdlVar
+			):
+				mdlX(mdlX), mdlXY(mdlX*mdlY), mdlZ(mdlZ),
+				imgX(imgX), imgY(imgY), imgZ(imgZ),
+				mdlInitY(mdlInitY), mdlInitZ(mdlInitZ),
+				padding_factor(padding_factor),
+				maxR(maxR), maxR2(maxR*maxR),
+				mdlReal(mdlReal), mdlImag(mdlImag), mdlVar(mdlVar)
 			{
 #ifndef CUDA		
 				std::complex<XFLOAT> *pData = mdlComplex;
@@ -231,6 +256,151 @@ public:
 #ifdef CUDA
 	__device__ __forceinline__
 #endif
+	void project3Dmodel(
+			int x,
+			int y,
+			XFLOAT e0,
+			XFLOAT e1,
+			XFLOAT e3,
+			XFLOAT e4,
+			XFLOAT e6,
+			XFLOAT e7,
+			XFLOAT &real,
+			XFLOAT &imag,
+            XFLOAT &var)
+	{
+		int r2;
+		
+        real=(XFLOAT)0;
+		imag=(XFLOAT)0;
+
+		r2 = x*x + y*y;
+		if (r2 <= maxR2)
+		{
+			XFLOAT xp = (e0 * x + e1 * y ) * padding_factor;
+			XFLOAT yp = (e3 * x + e4 * y ) * padding_factor;
+			XFLOAT zp = (e6 * x + e7 * y ) * padding_factor;
+
+#ifdef PROJECTOR_NO_TEXTURES
+			bool invers(xp < 0);
+			if (invers)
+			{
+				xp = -xp;
+				yp = -yp;
+				zp = -zp;
+			}
+			
+	#ifdef CUDA
+			real = no_tex3D(mdlReal, xp, yp, zp, mdlX, mdlXY, mdlInitY, mdlInitZ);
+			imag = no_tex3D(mdlImag, xp, yp, zp, mdlX, mdlXY, mdlInitY, mdlInitZ);
+            var  = no_tex3D(mdlVar,  xp, yp, zp, mdlX, mdlXY, mdlInitY, mdlInitZ);
+	#else
+				CpuKernels::complex3D(mdlComplex, real, imag, xp, yp, zp, mdlX, mdlXY, mdlInitY, mdlInitZ);
+	#endif
+			
+			if(invers)
+			    imag = -imag;
+#else
+			if (xp < 0)
+			{
+				// Get complex conjugated hermitian symmetry pair
+				xp = -xp;
+				yp = -yp;
+				zp = -zp;
+
+				yp -= mdlInitY;
+				zp -= mdlInitZ;
+
+				real =    tex3D<XFLOAT>(mdlReal, xp + (XFLOAT)0.5, yp + (XFLOAT)0.5, zp + (XFLOAT)0.5);
+				imag =  - tex3D<XFLOAT>(mdlImag, xp + (XFLOAT)0.5, yp + (XFLOAT)0.5, zp + (XFLOAT)0.5);
+			}
+			else
+			{
+				yp -= mdlInitY;
+				zp -= mdlInitZ;
+
+				real =   tex3D<XFLOAT>(mdlReal, xp + (XFLOAT)0.5, yp + (XFLOAT)0.5, zp + (XFLOAT)0.5);
+				imag =   tex3D<XFLOAT>(mdlImag, xp + (XFLOAT)0.5, yp + (XFLOAT)0.5, zp + (XFLOAT)0.5);
+			}
+            var  =    tex3D<XFLOAT>(mdlVar,  xp + (XFLOAT)0.5, yp + (XFLOAT)0.5, zp + (XFLOAT)0.5);
+#endif
+		}
+		else
+		{
+			real = (XFLOAT)0;
+			imag = (XFLOAT)0;
+            var  = (XFLOAT)0;
+		}
+	}
+
+#ifdef CUDA
+	__device__ __forceinline__
+#endif
+	void project3Dmodel(
+			int x,
+			int y,
+			XFLOAT e0,
+			XFLOAT e1,
+			XFLOAT e3,
+			XFLOAT e4,
+			XFLOAT e6,
+			XFLOAT e7,
+            XFLOAT &var)
+	{
+		int r2;
+		
+		var=(XFLOAT)0;
+
+		r2 = x*x + y*y;
+		if (r2 <= maxR2)
+		{
+			XFLOAT xp = (e0 * x + e1 * y ) * padding_factor;
+			XFLOAT yp = (e3 * x + e4 * y ) * padding_factor;
+			XFLOAT zp = (e6 * x + e7 * y ) * padding_factor;
+
+#ifdef PROJECTOR_NO_TEXTURES
+			bool invers(xp < 0);
+			if (invers)
+			{
+				xp = -xp;
+				yp = -yp;
+				zp = -zp;
+			}
+			
+	#ifdef CUDA
+            var  = no_tex3D(mdlVar,  xp, yp, zp, mdlX, mdlXY, mdlInitY, mdlInitZ);
+	#else
+				CpuKernels::complex3D(mdlComplex, real, imag, xp, yp, zp, mdlX, mdlXY, mdlInitY, mdlInitZ);
+	#endif
+			
+#else
+			if (xp < 0)
+			{
+				// Get complex conjugated hermitian symmetry pair
+				xp = -xp;
+				yp = -yp;
+				zp = -zp;
+
+				yp -= mdlInitY;
+				zp -= mdlInitZ;
+			}
+			else
+			{
+				yp -= mdlInitY;
+				zp -= mdlInitZ;
+			}
+            var  =    tex3D<XFLOAT>(mdlVar,  xp + (XFLOAT)0.5, yp + (XFLOAT)0.5, zp + (XFLOAT)0.5);
+#endif
+		}
+		else
+		{
+            var  = (XFLOAT)0;
+		}
+	}
+
+#ifdef CUDA
+	__device__ __forceinline__
+#endif
 	void project2Dmodel(
 				int x,
 				int y,
@@ -307,11 +477,13 @@ public:
 					maxR,
 #ifndef PROJECTOR_NO_TEXTURES
 					*p.mdlReal,
-					*p.mdlImag
+					*p.mdlImag,
+                    *p.mdlVar
 #else
 #ifdef CUDA
 					p.mdlReal,
-					p.mdlImag
+					p.mdlImag,
+                    p.mdlVar
 #else
 					p.mdlComplex
 #endif

@@ -40,6 +40,10 @@ public:
 	// The Fourier-space image data array
     MultidimArray<Complex > data;
 
+    //MOD: The fourier space variance for each grid point
+    MultidimArray<RFLOAT> variance;
+    //MultidimArray<RFLOAT> variance_coarse;
+
     // Only points within this many pixels from the origin (in the original size) will be interpolated
     int r_max;
 
@@ -131,6 +135,8 @@ public:
         if (&op != this)
         {
         	data = op.data;
+            //MOD:
+            variance = op.variance;
         	ori_size = op.ori_size;
         	pad_size = op.pad_size;
         	r_max = op.r_max;
@@ -162,6 +168,7 @@ public:
     void clear()
     {
     	data.clear();
+        variance.clear();
     	r_max = r_min_nn = interpolator = ref_dim = data_dim = pad_size = 0;
     	padding_factor = 0.;
     }
