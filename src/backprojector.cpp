@@ -1113,7 +1113,8 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
 	// Go from projector-centered to FFTW-uncentered
 	decenter(weight, Fweight, max_r2);
     //decenter test_weight
-    decenter(test_weight, Ftest_weight, max_r2);
+    if (update_tau2_with_fsc)
+        decenter(test_weight, Ftest_weight, max_r2);
     //std::cout << "decenter!!!!!" << std::endl;
 	// Take oversampling into account
 	RFLOAT oversampling_correction = (ref_dim == 3) ? (padding_factor * padding_factor * padding_factor) : (padding_factor * padding_factor);
@@ -1216,7 +1217,7 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
                 if (DIRECT_A1D_ELEM(tau2, ires) > 0.)
                 {
                     // Calculate inverse of tau2
-                    invtau2 = 1. / (oversampling_correction * tau2_fudge * DIRECT_A1D_ELEM(tau2, ires));
+                    invtau2 = 1. / (oversampling_correction * DIRECT_A1D_ELEM(tau2, ires));
                 }
                 else if (DIRECT_A1D_ELEM(tau2, ires) == 0.)
                 {
@@ -1236,7 +1237,7 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
                     DIRECT_A1D_ELEM(data_vs_prior, ires) += invw / invtau2;
 
                 // Keep track of the coverage in Fourier space
-                if (invw / invtau2 >= 1.)
+                if (invw / invtau2 >= 1./tau2_fudge)
                     DIRECT_A1D_ELEM(fourier_coverage, ires) += 1.;
 
                 DIRECT_A1D_ELEM(counter, ires) += 1.;
@@ -1263,6 +1264,10 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
                     DIRECT_A1D_ELEM(data_vs_prior, i) = 999.;
                 else
                     DIRECT_A1D_ELEM(data_vs_prior, i) /= DIRECT_A1D_ELEM(counter, i);
+                //when the spectrum of map drops below specified fraction
+                if(DIRECT_A1D_ELEM(data_vs_prior, i) > 1./tau2_fudge) {
+                    fsc143 = i;
+                }
             }
         }
         //l_r /= Fconv.getSize();
@@ -1286,8 +1291,14 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
         //first put data into Fconv, which is the fourier transforms of transformer
         //test conv will store the test data
         MultidimArray<Complex> Ftest_conv(Fconv, true);
-        decenter(data, Fconv, max_r2);
-        decenter(test_data, Ftest_conv, max_r2);
+        //only copy low resolution data into fconv to do cross validation when gold standard cv is unavailable
+        if(!update_tau2_with_fsc) {
+            decenter(data, Fconv, 4*fsc143*fsc143);
+        } else {
+            decenter(data, Fconv, max_r2);
+        }
+        if(update_tau2_with_fsc)
+            decenter(test_data, Ftest_conv, max_r2);
 
         //std::cout << "Fconv";
         //Fconv.printShape();
@@ -1357,10 +1368,16 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
         transformer.inverseFourierTransform();
         transformer.fReal = NULL;
         Mout.setXmippOrigin();
-        //divide by norm factor
+        //divide by norm factor since the data is from 2D FFT
         Mout /= normfft;
-        //multiply test weight by normfft
-        Ftest_weight *= normfft;
+        //multiply test weight by normfft, since the test data is from 2D FFT
+        // and test_data will be divided by test_weight
+        if(update_tau2_with_fsc) {
+            Ftest_weight *= normfft;
+        } else{
+            //put all data into Fconv when gold standard cv is unavailable!
+            decenter(data, Fconv, max_r2);
+        }
         //RFLOAT resi_M = 0.;
         //FOR_ALL_ELEMENTS_IN_ARRAY3D(Mout)
         //{
@@ -1384,7 +1401,10 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
         RFLOAT eps = tv_eps; //0.015;
 
         if(devBundle){
-            cuda_lasso(fsc143, tv_iters, l_r, mu, tv_alpha, tv_beta, eps, Mout, Fweight, Ftest_conv, Ftest_weight, vol_out, (MlDeviceBundle*) devBundle, ref_dim, avg_Fweight, normalise, true, tv_weight, tv_epsp);
+            if(update_tau2_with_fsc)
+                cuda_lasso(fsc143, tv_iters, l_r, mu, tv_alpha, tv_beta, eps, Mout, Fweight, Ftest_conv, Ftest_weight, vol_out, (MlDeviceBundle*) devBundle, ref_dim, avg_Fweight, normalise, true, tv_weight, tv_epsp);
+            else
+                cuda_lasso_nocv(fsc143, tv_iters, l_r, mu, tv_alpha, tv_beta, eps, Mout, Fweight, Fconv, vol_out, (MlDeviceBundle*) devBundle, ref_dim, avg_Fweight, normalise, true, tv_weight, tv_epsp);
         }
         //window map
         CenterFFT(vol_out,true);
@@ -1443,7 +1463,7 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
             // New SNR^MAP will be power spectrum divided by the noise in the reconstruction (i.e. sigma2)
             FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(data_vs_prior)
             {
-                DIRECT_MULTIDIM_ELEM(tau2, n) =  tau2_fudge * DIRECT_MULTIDIM_ELEM(spectrum, n);
+                DIRECT_MULTIDIM_ELEM(tau2, n) = DIRECT_MULTIDIM_ELEM(spectrum, n);
             }
             RCTOC(ReconTimer,ReconS_22);
         }
