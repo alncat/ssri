@@ -459,6 +459,17 @@ void MlOptimiser::parseContinue(int argc, char **argv)
 	skip_gridding = parser.checkOption("--skip_gridding", "", "false", true);
 	do_fsc0999 = checkParameter(argc, argv, "--fsc0999");
 
+    // Read in initial SSRI parameters
+    mymodel.do_tv = parser.checkOption("--tv", "Using total variation based regularization");
+
+    mymodel.tv_iters = textToInteger(parser.getOption("--tv_iters", "Number of iterations used in graph net based reconstruction", "100"));
+    mymodel.l_r = textToFloat(parser.getOption("--tv_lr", "Learning rate for graph net based reconstrunction", "1"));
+    mymodel.tv_weight = textToFloat(parser.getOption("--tv_weight", "Weight for implicit regularisation parameter", "0.2"));
+    mymodel.tv_alpha = textToFloat(parser.getOption("--tv_alpha", "Regularisation parameter for L1 terms", "0.1"));
+    mymodel.tv_beta = textToFloat(parser.getOption("--tv_beta", "Regularisation parameter for Graph L2 terms", "0.1"));
+    mymodel.tv_eps  = textToFloat(parser.getOption("--tv_eps", "eps value for l1 norm", "0.1"));
+    mymodel.tv_epsp = textToFloat(parser.getOption("--tv_epsp", "eps value for tv norm", "0.1"));
+
 	do_print_metadata_labels = false;
 	do_print_symmetry_ops = false;
 #ifdef DEBUG
@@ -2640,7 +2651,7 @@ void MlOptimiser::expectation()
 	// Initialise some stuff
 	// A. Update current size (may have been changed to ori_size in autoAdjustAngularSampling) and resolution pointers
 	updateImageSizeAndResolutionPointers();
-    if(do_auto_refine && iter == 1) {
+    if(iter == 1) {
         //MOD: calculate total pdf and initialise digamma here at first iteration
         mymodel.initialiseTotalPdf();
         mymodel.initialiseDigammaVar(sampling.NrDirections(), float(coarse_size*coarse_size)/2., coarse_size);
@@ -8970,7 +8981,14 @@ void MlOptimiser::updateSubsetSize(bool myverb)
 		}
 		if (subset_size > mydata.numberOfOriginalParticles())
 			subset_size = -1;
-	}
+        if(subset_size > 0){
+            mymodel.l_r = (0.5*subset_size)/mydata.numberOfOriginalParticles();
+            //mymodel.tv_weight = 0.5*(1 - mymodel.l_r);
+        } else {
+            mymodel.l_r = 0.5;
+	    }
+        std::cout << "changing learning rate for SSRI to " << mymodel.l_r << std::endl;
+    }
 	else if (do_sgd)
 	{
 

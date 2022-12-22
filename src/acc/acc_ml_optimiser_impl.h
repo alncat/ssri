@@ -1541,7 +1541,8 @@ void convertAllSquaredDifferencesToWeights(unsigned exp_ipass,
 	CTIC(accMLO->timer,"get_orient_priors");
 	for (unsigned long exp_iclass = sp.iclass_min; exp_iclass <= sp.iclass_max; exp_iclass++) {
         //RFLOAT normdigamma = digammal(baseMLO->mymodel.total_pdf[exp_iclass]*(1.+1e-4));
-        RFLOAT alpha = 1e-4/baseMLO->sampling.NrDirections()*baseMLO->mymodel.total_pdf[exp_iclass];
+        RFLOAT alpha = 1e-5;//1e-8/baseMLO->sampling.NrDirections()*baseMLO->mymodel.total_pdf[exp_iclass];
+        //std::cout << sp.idir_min << " " << sp.iclass_min << std::endl;
 		for (unsigned long idir = sp.idir_min, iorientclass = (exp_iclass-sp.iclass_min) * sp.nr_dir * sp.nr_psi; idir <=sp.idir_max; idir++)
 			for (unsigned long ipsi = sp.ipsi_min; ipsi <= sp.ipsi_max; ipsi++, iorientclass++)
 			{

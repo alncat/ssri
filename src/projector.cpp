@@ -199,8 +199,8 @@ void Projector::computeFourierTransformMap(MultidimArray<RFLOAT> &vol_in, Multid
     //MOD: backup variance before proceeding
     MultidimArray<RFLOAT> old_variance(variance);
 	initZeros(current_size);
-    std::cout << "old_variance: " << std::endl;
-    old_variance.printShape();
+    //std::cout << "old_variance: " << std::endl;
+    //old_variance.printShape();
 
     //assign the backup variance to new variance
     if(MULTIDIM_SIZE(old_variance) < MULTIDIM_SIZE(variance))
@@ -214,8 +214,8 @@ void Projector::computeFourierTransformMap(MultidimArray<RFLOAT> &vol_in, Multid
 		    A3D_ELEM(variance, k, i, j) = A3D_ELEM(old_variance, k, i, j);
         }
     }
-    std::cout << "variance: " << std::endl;
-    variance.printShape();
+    //std::cout << "variance: " << std::endl;
+    //variance.printShape();
 
 	// Fill data only for those points with distance to origin less than max_r
 	// (other points will be zero because of initZeros() call above
@@ -227,6 +227,7 @@ void Projector::computeFourierTransformMap(MultidimArray<RFLOAT> &vol_in, Multid
 
 	TIMING_TIC(TIMING_FAUX);
 	int max_r2 = ROUND(r_max * padding_factor) * ROUND(r_max * padding_factor);
+    //std::cout << "max_r2: " << max_r2 << std::endl;
 	if(do_heavy)
 		FOR_ALL_ELEMENTS_IN_FFTW_TRANSFORM(Faux) // This will also work for 2D
 		{
@@ -252,6 +253,7 @@ void Projector::computeFourierTransformMap(MultidimArray<RFLOAT> &vol_in, Multid
 	if(do_heavy)
 		FOR_ALL_DIRECT_ELEMENTS_IN_ARRAY1D(power_spectrum)
 		{
+            //std::cout << DIRECT_A1D_ELEM(power_spectrum, i) <<std::endl;
 			if (DIRECT_A1D_ELEM(counter, i) < 1.)
 				DIRECT_A1D_ELEM(power_spectrum, i) = 0.;
 			else
@@ -260,7 +262,7 @@ void Projector::computeFourierTransformMap(MultidimArray<RFLOAT> &vol_in, Multid
             //std::cout << DIRECT_A1D_ELEM(power_spectrum, i) << std::endl;
 		}
     //consider set zero variance to power spectrum
-    power_spectrum_avg /= MULTIDIM_SIZE(power_spectrum);
+    power_spectrum_avg /= sqrt(max_r2/4);
     FOR_ALL_ELEMENTS_IN_ARRAY3D(variance)
 	{
         int r2 = k*k + i*i + j*j;
@@ -273,8 +275,8 @@ void Projector::computeFourierTransformMap(MultidimArray<RFLOAT> &vol_in, Multid
         }
     }
     old_variance.clear();
-    std::cout << "variance set!!!" << std::endl;
-    std::cout << power_spectrum_avg << std::endl;
+    if(power_spectrum_avg != 0)
+        std::cout << "variance set to " << power_spectrum_avg << "!!!"<< std::endl;
 	TIMING_TOC(TIMING_POW);
 
 	TIMING_TOC(TIMING_TOP);

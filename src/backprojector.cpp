@@ -1196,7 +1196,7 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
 	// This will regularise the actual reconstruction
     //reconstruct by total variation regularization
     if (do_tv){
-        std::cout << "start graph net based reconstruction" << std::endl;
+        std::cout << "using SSRI!" << std::endl;
         //update ssnr
         if (!update_tau2_with_fsc)
             data_vs_prior.initZeros(ori_size/2 + 1);
@@ -1234,7 +1234,7 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
 
                 // Keep track of spectral evidence-to-prior ratio and remaining noise in the reconstruction
                 if (!update_tau2_with_fsc)
-                    DIRECT_A1D_ELEM(data_vs_prior, ires) += invw / invtau2;
+                    DIRECT_A1D_ELEM(data_vs_prior, ires) += invw/normalise*tau2_fudge;
 
                 // Keep track of the coverage in Fourier space
                 if (invw / invtau2 >= 1./tau2_fudge)
@@ -1265,11 +1265,13 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
                 else
                     DIRECT_A1D_ELEM(data_vs_prior, i) /= DIRECT_A1D_ELEM(counter, i);
                 //when the spectrum of map drops below specified fraction
-                if(DIRECT_A1D_ELEM(data_vs_prior, i) > 1./tau2_fudge) {
+                if(DIRECT_A1D_ELEM(data_vs_prior, i) > 1.) {
                     fsc143 = i;
                 }
             }
         }
+        fsc143 = r_max - 3;
+        std::cout << "r_max: " << r_max << " " << max_r2 << " fsc143: " << fsc143 << std::endl;
         //l_r /= Fconv.getSize();
 
         RFLOAT tot_weights = 0.;
@@ -1293,7 +1295,7 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
         MultidimArray<Complex> Ftest_conv(Fconv, true);
         //only copy low resolution data into fconv to do cross validation when gold standard cv is unavailable
         if(!update_tau2_with_fsc) {
-            decenter(data, Fconv, 4*fsc143*fsc143);
+            decenter(data, Fconv, max_r2);
         } else {
             decenter(data, Fconv, max_r2);
         }
@@ -1362,7 +1364,7 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
         //Mout.printShape();
         //std::cout << "ssnr: " << ssnr << std::endl;
         avg_Fweight /= tot_weights;
-        std::cout << "avg_Fweight: " << avg_Fweight << " " << normalise << std::endl;
+        std::cout << "avg_Fweight: " << avg_Fweight << " # of particles: " << normalise << std::endl;
 
         transformer.setReal(Mout, nr_threads);
         transformer.inverseFourierTransform();
@@ -1376,7 +1378,7 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
             Ftest_weight *= normfft;
         } else{
             //put all data into Fconv when gold standard cv is unavailable!
-            decenter(data, Fconv, max_r2);
+            //decenter(data, Fconv, max_r2);
         }
         //RFLOAT resi_M = 0.;
         //FOR_ALL_ELEMENTS_IN_ARRAY3D(Mout)

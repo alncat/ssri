@@ -372,8 +372,12 @@ void cuda_lasso_nocv(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_
         MultidimArray<RFLOAT> &Fweight, MultidimArray<Complex> &Fdata, MultidimArray<RFLOAT> &vol_out, MlDeviceBundle *devBundle, int data_dim, RFLOAT normalise, RFLOAT nrparts, bool do_nag, RFLOAT implicit_weight, RFLOAT epsp){
     cudaSetDevice(devBundle->device_id);
     devBundle->setStream();
-    std::cout <<" Device: " << devBundle->device_id <<", fsc143: " << fsc143;
-    std::cout << " vol_out: " << vol_out.xdim << ", " << vol_out.ydim << ", " << vol_out.zdim << std::endl;
+    tv_alpha = l_r*tv_alpha;
+    tv_beta = l_r*tv_beta;
+    implicit_weight /= l_r;
+    std::cout <<" Device: " << devBundle->device_id <<", fsc143: " << fsc143 << ", normalise: " << normalise;
+    std::cout <<", learning rate: " << l_r << ", alpha: " << tv_alpha << ", beta: " << tv_beta << ", implicit_weight: " << implicit_weight;
+    std::cout << ", vol_out: " << vol_out.xdim << std::endl;
     int ZZ = vol_out.zdim >> 1;
     int YY = vol_out.ydim >> 1;
     int XX = vol_out.xdim >> 1;
@@ -421,11 +425,11 @@ void cuda_lasso_nocv(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_
             //transformer.fouriers[i].y = Fconv.data[i].imag;
             yob[i] = Fconv.data[i];
             fconv_norm += Fconv.data[i]*Fconv.data[i];
-            if(pq.size() < median_size) pq.push(yob[i]);
-            else if(pq.top() < yob[i]) {
-                pq.pop();
-                pq.push(yob[i]);
-            }
+            //if(pq.size() < median_size) pq.push(yob[i]);
+            //else if(pq.top() < yob[i]) {
+            //    pq.pop();
+            //    pq.push(yob[i]);
+            //}
             yob[i] += lambda*((XFLOAT)vol_out.data[i]);
             //std::cout << yob[i] << std::endl;
         }
@@ -449,7 +453,13 @@ void cuda_lasso_nocv(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_
                (i < YY || i >= Y - YY) &&
                (j < XX || j >= X - XX)){
                 img[k*Y*X + i*X + j] = DIRECT_A3D_ELEM(vol_out, k, i, j);
-                if(img[k*Y*X + i*X + j] > 1.e-3) {
+                XFLOAT value = img[k*Y*X + i*X + j];
+                if(pq.size() < median_size) pq.push(value);
+                else if(pq.top() < value) {
+                    pq.pop();
+                    pq.push(value);
+                }
+                if(abs(img[k*Y*X + i*X + j]) > 1.e-3) {
                     sparse_count += 1;
                     yob_norm += abs(img[k*Y*X + i*X + j]);
                 } else {
@@ -512,10 +522,10 @@ void cuda_lasso_nocv(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_
         if(kp < 0) kw += Fweight.zdim;
         if(ip < 0) iw += Fweight.ydim;
         int index = kw*Fweight.ydim*Fweight.xdim + iw*Fweight.xdim + jw;
-        if(kp*kp + ip*ip + jp*jp > 4*fsc143*fsc143)
-            weight[index] = FFTW_ELEM(Fweight, kp, ip, jp);
-        else
-            weight[index] = 0.;
+        //if(kp*kp + ip*ip + jp*jp > 4*fsc143*fsc143)
+        weight[index] = FFTW_ELEM(Fweight, kp, ip, jp);
+        //else
+        //    weight[index] = 0.;
         if(max_weight < weight[index]) max_weight = weight[index];
         if(min_weight > weight[index] && weight[index] > 1e-5) min_weight = weight[index];        
     }
@@ -530,7 +540,7 @@ void cuda_lasso_nocv(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_
     //eps = max(pq.top(), 0.1);
     //eps = 0.1;
     XFLOAT tv_eps = 1./sqrt(normalise);//0.00005;
-    XFLOAT tv_log_eps = epsp;
+    XFLOAT tv_log_eps = epsp;///3.;
     int FBsize = (int) ceilf((float)transformer.fouriers.getSize()/(float)BLOCK_SIZE);
     int imgBsize = (int) ceilf((float)img_size_h/(float)BLOCK_SIZE);
     int imgBFsize = (int) ceilf((float)img.getSize()/(float)BLOCK_SIZE);
@@ -539,8 +549,9 @@ void cuda_lasso_nocv(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_
     
     std::cout << "device: " << devBundle->device_id << " weight: " << weight_norm << std::endl;
     Fweight.printShape();
-    l_r = l_r/(max_weight + normalise);
-    std::cout << "start optimizing " << "lambda: " << lambda << " avg weight : " << normalise << " max weight: " << max_weight << " min weight: " << min_weight << " condition number: " << max_weight/min_weight << std::endl;
+    
+    l_r = l_r/(max_weight + 2.*lambda);
+    std::cout << "optimization params: " << "implicit_weight: " << lambda << " avg weight : " << normalise << " max weight: " << max_weight << " min weight: " << min_weight << " condition number: " << max_weight/min_weight << std::endl;
     //tv_alpha *= std::sqrt(normalise);
     //tv_beta *= std::sqrt(normalise);
     std::cout << "fconv_norm: " << fconv_norm << " img_norm: " << yob_norm <<" img_size " << img_size << " FBsize " << FBsize << std::endl;
@@ -559,7 +570,7 @@ void cuda_lasso_nocv(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_
     for(int eps_i = 0; eps_i < 1; eps_i++){
         //eps = 0.05/(eps_i+1);
         tv_alpha = alpha/(eps_i + 1.)*fconv_norm*eps; //(1. - float(eps_i)/2.)*sqrt(normalise);//fconv_norm*eps/3;
-        for(int beta_i = 0; beta_i < 3; beta_i++){
+        for(int beta_i = 0; beta_i < 1; beta_i++){
             tv_beta = beta*(1. - float(beta_i)/5.)*fconv_norm*tv_log_eps;//*sqrt(normalise);//fconv_norm*eps/3;
             w = tv_alpha;
             for(int m_c = 0; m_c <= tv_iters; m_c++){
@@ -667,7 +678,7 @@ void cuda_lasso_nocv(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_
             //sync then
             //compare with test data
             RFLOAT test_err = 0.;
-            RFLOAT test_counter = 0.;
+            RFLOAT test_counter = 1.;
             RFLOAT avg_F = 0.;
             FOR_ALL_ELEMENTS_IN_FFTW_TRANSFORM(Fweight){
                 if(kp*kp + ip*ip + jp*jp > 4*fsc143*fsc143) {
@@ -689,7 +700,7 @@ void cuda_lasso_nocv(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_
             }
             test_err /= test_counter;
             avg_F /= test_counter;
-            std::cout << "eps_i: " << eps_i << " " << beta_i << " alpha_i: " <<  tv_alpha << " beta_i: " << tv_beta << " test_err: " << sqrt(test_err) << " avg_F: " << sqrt(avg_F) << std::endl;
+            std::cout << " alpha_i: " <<  tv_alpha << " beta_i: " << tv_beta << " test_err: " << sqrt(test_err) << " avg_F: " << sqrt(avg_F) << std::endl;
             if(min_err > test_err) {
                 min_err = test_err;
                 best_beta = tv_beta;

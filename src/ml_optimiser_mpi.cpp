@@ -775,7 +775,7 @@ void MlOptimiserMpi::expectation()
 	// A. Update current size (may have been changed to ori_size in autoAdjustAngularSampling) and resolution pointers
 	updateImageSizeAndResolutionPointers();
 
-    if(!node->isMaster() && do_auto_refine && iter == 1) {
+    if(!node->isMaster() && iter == 1) {
         //MOD: calculate total pdf and initialise digamma here at first iteration
         mymodel.initialiseTotalPdf();
         mymodel.initialiseDigammaVar(sampling.NrDirections(), coarse_size*coarse_size, coarse_size);
@@ -2075,6 +2075,7 @@ void MlOptimiserMpi::maximization()
 			// either ibody or iclass can be larger than 0, never 2 at the same time!
 			int ith_recons = (mymodel.nr_bodies > 1) ? ibody : iclass;
 
+            std::cout << "iclass: " << iclass << " pdf: " << wsum_model.pdf_class[iclass] << std::endl;
 			if (wsum_model.pdf_class[iclass] > 0.)
 			{
 				// Parallelise: each MPI-node has a different reference
@@ -3126,9 +3127,10 @@ void MlOptimiserMpi::iterate()
 		mydata.randomiseOriginalParticlesOrder(random_seed+iter, do_split_random_halves,  subset_size < mydata.numberOfOriginalParticles() );
         if(iter != 1){
             if(mymodel.do_tv){
-                mymodel.tv_alpha *= exp(0.04);
-                mymodel.tv_beta *= exp(0.04);
-                mymodel.tv_weight *= exp(0.025);
+                mymodel.tv_alpha *= exp(0.04); //std::min(exp(0.04*iter), 2.);
+                mymodel.tv_beta *= exp(0.04); //std::min(exp(0.04*iter), 2.);
+                mymodel.tv_weight *= exp(-0.04);
+                //mymodel.tv_weight = std::min(mymodel.tv_weight, 0.9);
                 //mymodel.tv_iters = mymodel.tv_iters*exp(0.035);
             }
             acceptance_ratio *= 1.035;
