@@ -1234,7 +1234,7 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
 
                 // Keep track of spectral evidence-to-prior ratio and remaining noise in the reconstruction
                 if (!update_tau2_with_fsc)
-                    DIRECT_A1D_ELEM(data_vs_prior, ires) += invw/normalise*tau2_fudge;
+                    DIRECT_A1D_ELEM(data_vs_prior, ires) += invw;///normalise*tau2_fudge;
 
                 // Keep track of the coverage in Fourier space
                 if (invw / invtau2 >= 1./tau2_fudge)
@@ -1264,6 +1264,8 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
                     DIRECT_A1D_ELEM(data_vs_prior, i) = 999.;
                 else
                     DIRECT_A1D_ELEM(data_vs_prior, i) /= DIRECT_A1D_ELEM(counter, i);
+                //divide by the first weight and multilpy with tau2_fudge
+                if(i > 0) DIRECT_A1D_ELEM(data_vs_prior, i) /= DIRECT_A1D_ELEM(data_vs_prior, 0)/tau2_fudge;
                 //when the spectrum of map drops below specified fraction
                 if(DIRECT_A1D_ELEM(data_vs_prior, i) > 1.) {
                     fsc143 = i;

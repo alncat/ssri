@@ -550,7 +550,7 @@ void cuda_lasso_nocv(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_
     std::cout << "device: " << devBundle->device_id << " weight: " << weight_norm << std::endl;
     Fweight.printShape();
     
-    l_r = l_r/(max_weight + 2.*lambda);
+    l_r = l_r/(max_weight + 2.*normalise);
     std::cout << "optimization params: " << "implicit_weight: " << lambda << " avg weight : " << normalise << " max weight: " << max_weight << " min weight: " << min_weight << " condition number: " << max_weight/min_weight << std::endl;
     //tv_alpha *= std::sqrt(normalise);
     //tv_beta *= std::sqrt(normalise);
