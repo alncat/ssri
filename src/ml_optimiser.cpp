@@ -469,6 +469,8 @@ void MlOptimiser::parseContinue(int argc, char **argv)
     mymodel.tv_beta = textToFloat(parser.getOption("--tv_beta", "Regularisation parameter for Graph L2 terms", "0.1"));
     mymodel.tv_eps  = textToFloat(parser.getOption("--tv_eps", "eps value for l1 norm", "0.1"));
     mymodel.tv_epsp = textToFloat(parser.getOption("--tv_epsp", "eps value for tv norm", "0.1"));
+    adaptive_fraction = textToFloat(parser.getOption("--adaptive_fraction", "Fraction of the weights to be considered in the first pass of adaptive oversampling ", "0.999"));
+    acceptance_ratio = textToDouble(parser.getOption("--acceptance_ratio", "The acceptance_ratio for sample random sampling", "1."));
 
 	do_print_metadata_labels = false;
 	do_print_symmetry_ops = false;
@@ -4473,13 +4475,14 @@ void MlOptimiser::updateCurrentResolution()
 					for (int iclass = 0; iclass < mymodel.nr_classes; iclass++)
 					{
 						int iclass_body = (mymodel.nr_bodies > 1) ? ibody: iclass;
+                        int fsc05 = 0;
 						for (ires = 1; ires < mymodel.ori_size/2; ires++)
 						{
-							if (DIRECT_A1D_ELEM(mymodel.data_vs_prior_class[iclass_body], ires) < 1.)
-								break;
+							if (DIRECT_A1D_ELEM(mymodel.data_vs_prior_class[iclass_body], ires) > 1.)
+								fsc05 = ires;
 						}
 						// Subtract one shell to be back on the safe side
-						ires--;
+						ires = fsc05;
 
 						if (do_split_random_halves && do_auto_refine)
 						{

@@ -3136,6 +3136,7 @@ void MlOptimiserMpi::iterate()
             acceptance_ratio *= 1.035;
             adaptive_fraction *= 1.01;
             adaptive_fraction = std::min(adaptive_fraction, 0.999);
+            adaptive_fraction = std::min(adaptive_fraction, 1.);
         }
 		// Nobody can start the next iteration until everyone has finished
 		MPI_Barrier(MPI_COMM_WORLD);
@@ -3252,14 +3253,14 @@ void MlOptimiserMpi::iterate()
 					int fsc0143 = -1;
 					FOR_ALL_DIRECT_ELEMENTS_IN_ARRAY1D(mymodel.fsc_halves_class[ibody])
 					{
-						if (DIRECT_A1D_ELEM(mymodel.fsc_halves_class[ibody], i) < 0.5 && fsc05 < 0)
+						if (DIRECT_A1D_ELEM(mymodel.fsc_halves_class[ibody], i) >= 0.5) //< 0.5 && fsc05 < 0)
 							fsc05 = i;
-						if (DIRECT_A1D_ELEM(mymodel.fsc_halves_class[ibody], i) < 0.143 && fsc0143 < 0)
+						if (DIRECT_A1D_ELEM(mymodel.fsc_halves_class[ibody], i) >= 0.143)//< 0.143 && fsc0143 < 0)
 							fsc0143 = i;
 					}
 
 					// At least fsc05 - fsc0143 + 5 shells as incr_size
-					incr_size = XMIPP_MAX(incr_size, fsc0143 - fsc05 + 5);
+					incr_size = XMIPP_MAX(10, fsc0143 - fsc05 + 5); //bug fixed! fix the incr_size to be 10
 					if (!has_high_fsc_at_limit)
 						has_high_fsc_at_limit = (DIRECT_A1D_ELEM(mymodel.fsc_halves_class[ibody], mymodel.current_size/2 - 1) > 0.2);
 				}
