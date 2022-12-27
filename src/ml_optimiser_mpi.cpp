@@ -265,7 +265,7 @@ void MlOptimiserMpi::initialise()
 						}
 						else
 						{
-							dev_id = textToInteger(allThreadIDs[rank-1][i % (allThreadIDs[rank-1]).size()].c_str());
+							dev_id = textToInteger(allThreadIDs[rank-1][(i + rank - 1)% (allThreadIDs[rank-1]).size()].c_str());
 						}
 					}
 					else
@@ -3136,7 +3136,7 @@ void MlOptimiserMpi::iterate()
             acceptance_ratio *= 1.035;
             adaptive_fraction *= 1.01;
             adaptive_fraction = std::min(adaptive_fraction, 0.999);
-            adaptive_fraction = std::min(adaptive_fraction, 1.);
+            acceptance_ratio = std::min(acceptance_ratio, 1.);
         }
 		// Nobody can start the next iteration until everyone has finished
 		MPI_Barrier(MPI_COMM_WORLD);
@@ -3261,8 +3261,8 @@ void MlOptimiserMpi::iterate()
 
 					// At least fsc05 - fsc0143 + 5 shells as incr_size
 					incr_size = XMIPP_MAX(10, fsc0143 - fsc05 + 5); //bug fixed! fix the incr_size to be 10
-					if (!has_high_fsc_at_limit)
-						has_high_fsc_at_limit = (DIRECT_A1D_ELEM(mymodel.fsc_halves_class[ibody], mymodel.current_size/2 - 1) > 0.2);
+					//if (!has_high_fsc_at_limit)
+					has_high_fsc_at_limit = (DIRECT_A1D_ELEM(mymodel.fsc_halves_class[ibody], mymodel.current_size/2 - 1) > 0.2);
 				}
 			}
 

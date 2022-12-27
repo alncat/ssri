@@ -471,6 +471,7 @@ void MlOptimiser::parseContinue(int argc, char **argv)
     mymodel.tv_epsp = textToFloat(parser.getOption("--tv_epsp", "eps value for tv norm", "0.1"));
     adaptive_fraction = textToFloat(parser.getOption("--adaptive_fraction", "Fraction of the weights to be considered in the first pass of adaptive oversampling ", "0.999"));
     acceptance_ratio = textToDouble(parser.getOption("--acceptance_ratio", "The acceptance_ratio for sample random sampling", "1."));
+    do_fast_subsets = parser.checkOption("--fast_subsets", "Use faster optimisation by using subsets of the data in the first 15 iterations");
 
 	do_print_metadata_labels = false;
 	do_print_symmetry_ops = false;
@@ -4562,6 +4563,8 @@ void MlOptimiser::updateImageSizeAndResolutionPointers()
     // in the latter case, over-marginalisation may lead to spuriously high FSCs (2 smoothed maps may look very similar at high-res: all zero!)
     //
 	int maxres = mymodel.getPixelFromResolution(mymodel.current_resolution);
+    std::cout << "maxres before increasing: " << maxres << ", has_high_fsc_at_limit: " << has_high_fsc_at_limit << ", current_size: " << mymodel.current_size << std::endl;
+    mymodel.fsc_halves_class[0].printShape();
 	if (mymodel.ave_Pmax > 0.1 && has_high_fsc_at_limit)
     {
 		maxres += ROUND(0.25 * mymodel.ori_size / 2);
@@ -4572,6 +4575,7 @@ void MlOptimiser::updateImageSizeAndResolutionPointers()
 		maxres += incr_size;
 	}
 
+    std::cout << "maxres: " << maxres << ", incr_size: " << incr_size << std::endl;
     // Go back from resolution shells (i.e. radius) to image size, which are BTW always even...
 	mymodel.current_size = maxres * 2;
 
@@ -8982,15 +8986,16 @@ void MlOptimiser::updateSubsetSize(bool myverb)
 		{
 			subset_size = -1;
 		}
+        subset_size = mydata.numberOfOriginalParticles()*acceptance_ratio;
 		if (subset_size > mydata.numberOfOriginalParticles())
 			subset_size = -1;
-        if(subset_size > 0){
-            mymodel.l_r = (0.5*subset_size)/mydata.numberOfOriginalParticles();
-            //mymodel.tv_weight = 0.5*(1 - mymodel.l_r);
-        } else {
-            mymodel.l_r = 0.5;
-	    }
-        std::cout << "changing learning rate for SSRI to " << mymodel.l_r << std::endl;
+        //if(subset_size > 0){
+        //    mymodel.l_r = (0.5*subset_size)/mydata.numberOfOriginalParticles();
+        //    //mymodel.tv_weight = 0.5*(1 - mymodel.l_r);
+        //} else {
+        //    mymodel.l_r = 0.5;
+	    //}
+        std::cout << "setting subset_size to " << subset_size << std::endl;
     }
 	else if (do_sgd)
 	{

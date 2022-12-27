@@ -217,6 +217,7 @@ void cuda_lasso(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_alpha
                 //        (XFLOAT)1/((XFLOAT)transformer.reals.getSize()),
                 //        transformer.fouriers.getSize());
                 int xdim = X/2 + 1;
+                //multiply weight and bfactor
                 cuda_kernel_complex_multi<<<FBsize, BLOCK_SIZE, 0, transformer.fouriers.getStream()>>>(
                         (XFLOAT*)~transformer.fouriers,
                         ~weight,
@@ -349,21 +350,37 @@ void cuda_lasso(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_alpha
     //print best beta
     std::cout << "eps: " << best_eps << " tv_beta: " << best_beta << " min_err: " << sqrt(min_err) << std::endl;
     //now copy image to host
+    for(int i = 0; i < img_size; i++){
+        img[i] = best_img.data[i];
+    }
+    //applying bfactor blurring before storing
+    transformer.forward();
+    transformer.fouriers.streamSync();
+    cuda_kernel_bfactor<<<FBsize, BLOCK_SIZE, 0, transformer.fouriers.getStream()>>>(
+                        (XFLOAT*)~transformer.fouriers,
+                        scale,
+                        2.,
+                        Z,
+                        Y,
+                        X/2 + 1,
+                        transformer.fouriers.getSize());
+    transformer.backward();
+
     //now set vol_out and wait for stream to complete
     img.streamSync();
     bool hasnan = false;
     for(int i = 0; i < img_size; i++){
-        if(isnan(best_img.data[i])){
+        if(isnan(img[i])){
             vol_out.data[i] = 0.;
             hasnan = true;
         }
         else
         {
             //consider upscale image
-            vol_out.data[i] = best_img.data[i];
+            vol_out.data[i] = img[i];
         }
     }
-    if(hasnan) std::cout << "WARNING: find nan in reconstruction." << std::endl;
+    if(hasnan) std::cout << "WARNING: find nans in reconstruction!" << std::endl;
     transformer.clear();
     devBundle->destroyStream();
 }
@@ -550,7 +567,7 @@ void cuda_lasso_nocv(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_
     std::cout << "device: " << devBundle->device_id << " weight: " << weight_norm << std::endl;
     Fweight.printShape();
     
-    l_r = l_r/(max_weight + 2.*normalise);
+    l_r = l_r/(2.*max_weight + lambda);
     std::cout << "optimization params: " << "implicit_weight: " << lambda << " max weight: " << max_weight << " min weight: " << min_weight << " condition number: " << max_weight/min_weight << std::endl;
     //tv_alpha *= std::sqrt(normalise);
     //tv_beta *= std::sqrt(normalise);
@@ -713,6 +730,7 @@ void cuda_lasso_nocv(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_
         }//end beta search loop
     }//end eps search loop
     //print best beta
+    //set img before fourier transform
     std::cout << "eps: " << best_eps << " tv_alpha: " << tv_alpha << " tv_beta: " << best_beta << " min_err: " << sqrt(min_err) << std::endl;
     //now copy image to host
     //now set vol_out and wait for stream to complete

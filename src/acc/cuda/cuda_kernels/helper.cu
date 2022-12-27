@@ -1049,6 +1049,29 @@ __global__ void cuda_kernel_complex_multi( XFLOAT *A,
     }
 }
 
+__global__ void cuda_kernel_bfactor( XFLOAT *A,
+                                   XFLOAT S,
+                                   XFLOAT B,
+                                   int Z,
+                                   int Y,
+                                   int X,
+                                   int image_size)
+{
+    int pixel = threadIdx.x + blockIdx.x*BLOCK_SIZE;
+    if(pixel < image_size) {
+        int kp = pixel / (Y*X);
+        int ip = (pixel - kp * (Y*X))/X;
+        int jp = pixel - kp * (Y*X) - ip * X;
+        if(kp >= X) kp -= (Z);
+        if(ip >= X) ip -= (Y);
+        XFLOAT freq = (kp*kp + ip*ip + jp*jp)/(Y*Y)*4.*(XFLOAT)PI*(XFLOAT)PI*B;
+        XFLOAT bfactor = exp(-freq);
+        //freq = 1.;//39.4784176*freq/(X*X) + 1.;
+        A[pixel*2] *= S*bfactor;
+        A[pixel*2+1] *= S*bfactor;
+    }
+}
+
 __global__ void cuda_kernel_complex_multi( XFLOAT *A,
                                    XFLOAT *B,
                                    XFLOAT S,
@@ -1068,19 +1091,20 @@ __global__ void cuda_kernel_complex_multi( XFLOAT *A,
         int jp = pixel - kp * (Y*X) - ip * X;
         if(kp >= X) kp -= (Z);
         if(ip >= X) ip -= (Y);
-        XFLOAT freq = kp*kp + ip*ip + jp*jp;
-        freq = 1.;//39.4784176*freq/(X*X) + 1.;
+        XFLOAT freq = (kp*kp + ip*ip + jp*jp)/(Y*Y)*4.*(XFLOAT)PI*(XFLOAT)PI;
+        XFLOAT bfactor = exp(-freq);
+        //freq = 1.;//39.4784176*freq/(X*X) + 1.;
         if(kp < XX && kp > -XX && ip < XX && ip > -XX && jp < XX) {
             if(kp < 0) kp += ZZ;
             if(ip < 0) ip += YY;
             int n_pixel = kp*(YY*XX) + ip*XX + jp;
-            A[pixel*2] *= (B[n_pixel]*S + w*freq);
-            A[pixel*2+1] *= (B[n_pixel]*S + w*freq);
+            A[pixel*2] *= (B[n_pixel]*S);//*bfactor;
+            A[pixel*2+1] *= (B[n_pixel]*S);//*bfactor;
         } else {
-            //A[pixel*2] = 0.;
-            //A[pixel*2+1] = 0.;
-            A[pixel*2] *=w*freq;
-            A[pixel*2+1] *=w*freq;
+            A[pixel*2] = 0.;
+            A[pixel*2+1] = 0.;
+            //A[pixel*2] *= bfactor*S;
+            //A[pixel*2+1] *= bfactor*S;
         }
     }
 }

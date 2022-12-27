@@ -1271,8 +1271,8 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
                     fsc143 = i;
                 }
             }
+            fsc143 = r_max - 3;
         }
-        fsc143 = r_max - 3;
         std::cout << "r_max: " << r_max << " " << max_r2 << " fsc143: " << fsc143 << std::endl;
         //l_r /= Fconv.getSize();
 
@@ -1332,18 +1332,8 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
         //    DIRECT_MULTIDIM_ELEM(Fconv, n) /= normalise;
 		//}
         RFLOAT avg_Fconv = 0.;
+        avg_Fweight = 0.;
         //RFLOAT counter = 0.;
-        //FOR_ALL_ELEMENTS_IN_FFTW_TRANSFORM(Fconv)
- 		//{
-		//	int r2 = kp * kp + ip * ip + jp * jp;
-		//	if (r2 < max_r2)
-        //    {
-        //        //FFTW_ELEM(Fconv, kp, ip, jp) /= normfft;
-        //        avg_Fweight += A3D_ELEM(Fweight, k, i, j)*A3D_ELEM(Fweight, k, i, j);
-        //        avg_Fconv += abs(A3D_ELEM(Fconv, k, i, j));
-        //        counter += 1.;
-        //    }
-        //}
         //avg_Fweight /= MULTIDIM_SIZE(Fweight);
         //avg_Fconv /= counter;
 
@@ -1361,12 +1351,36 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
         //    resi_M += A3D_ELEM(Mout, k, i, j)*A3D_ELEM(Mout, k, i, j);
         //}
         //resi_M /= MULTIDIM_SIZE(Mout);
+        //
+        //blurring fconv before inverse transform
+        std::cout << Fconv.zdim << std::endl;
+        Fconv.printShape();
+        Fweight.printShape();
+        RFLOAT B_factor = 2.;
+        FOR_ALL_ELEMENTS_IN_FFTW_TRANSFORM(Fweight)
+ 		{
+			int r2 = kp * kp + ip * ip + jp * jp;
+			if (r2 < max_r2)
+            {
+                //FFTW_ELEM(Fconv, kp, ip, jp) /= normfft;
+                //avg_Fweight += A3D_ELEM(Fweight, k, i, j)*A3D_ELEM(Fweight, k, i, j);
+                r2 /= (Fconv.zdim*Fconv.zdim);
+                RFLOAT bfactor = exp(-r2*4.*PI*PI*B_factor);
+                DIRECT_A3D_ELEM(Fconv, k, i, j) *= bfactor;
+                DIRECT_A3D_ELEM(Fweight, k, i, j) *= bfactor*bfactor;
+                avg_Fconv += abs(DIRECT_A3D_ELEM(Fconv, k, i, j));
+                avg_Fweight += abs(DIRECT_A3D_ELEM(Fweight, k, i, j));
+                //counter += 1.;
+            }
+        }
+
         Mout.setXmippOrigin();
         //std::cout << "Mout";
         //Mout.printShape();
         //std::cout << "ssnr: " << ssnr << std::endl;
         avg_Fweight /= tot_weights;
-        std::cout << "avg_Fweight: " << avg_Fweight << " # of particles: " << normalise << std::endl;
+        avg_Fconv /= tot_weights;
+        std::cout << "avg_Fweight: " << avg_Fweight << ", avg_Fconv: " << avg_Fconv << " # of particles: " << normalise << std::endl;
 
         transformer.setReal(Mout, nr_threads);
         transformer.inverseFourierTransform();

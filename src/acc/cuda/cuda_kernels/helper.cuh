@@ -532,6 +532,14 @@ __global__ void cuda_kernel_complex_multi( XFLOAT *A,
 								   XFLOAT S,
 		  	  	  	  	  	  	   int image_size);
 
+__global__ void cuda_kernel_bfactor( XFLOAT *A,
+                                   XFLOAT S,
+                                   XFLOAT B,
+                                   int Z,
+                                   int Y,
+                                   int X,
+                                   int image_size);
+
 __global__ void cuda_kernel_complex_multi( XFLOAT *A,
                                    XFLOAT *B,
                                    XFLOAT S,
