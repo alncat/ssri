@@ -16,7 +16,7 @@ inline int mapToCompact(int k, int i, int j, int Z, int Y, int X, int ZZ, int YY
 }
 
 void cuda_lasso(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_alpha, RFLOAT tv_beta, RFLOAT eps, MultidimArray<RFLOAT> &Fconv,
-        MultidimArray<RFLOAT> &Fweight, MultidimArray<Complex> &Ftest_conv, MultidimArray<RFLOAT> &Ftest_weight, MultidimArray<RFLOAT> &vol_out, MlDeviceBundle *devBundle, int data_dim, RFLOAT normalise, RFLOAT nrparts, bool do_nag, RFLOAT implicit_weight, RFLOAT epsp){
+        MultidimArray<RFLOAT> &Fweight, MultidimArray<Complex> &Ftest_conv, MultidimArray<RFLOAT> &Ftest_weight, MultidimArray<RFLOAT> &vol_out, MlDeviceBundle *devBundle, int data_dim, RFLOAT normalise, RFLOAT nrparts, bool do_nag, RFLOAT implicit_weight, RFLOAT epsp, RFLOAT bfactor){
     cudaSetDevice(devBundle->device_id);
     devBundle->setStream();
     std::cout <<" Device: " << devBundle->device_id <<", fsc143: " << fsc143;
@@ -359,7 +359,7 @@ void cuda_lasso(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_alpha
     cuda_kernel_bfactor<<<FBsize, BLOCK_SIZE, 0, transformer.fouriers.getStream()>>>(
                         (XFLOAT*)~transformer.fouriers,
                         scale,
-                        2.,
+                        bfactor,
                         Z,
                         Y,
                         X/2 + 1,

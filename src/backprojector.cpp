@@ -995,7 +995,8 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
                                 RFLOAT tv_weight,
                                 void* devBundle,
                                 RFLOAT tv_eps,
-                                RFLOAT tv_epsp)
+                                RFLOAT tv_epsp,
+                                RFLOAT B_factor)
 {
 
 #ifdef TIMING
@@ -1273,7 +1274,7 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
             }
             fsc143 = r_max - 3;
         }
-        std::cout << "r_max: " << r_max << " " << max_r2 << " fsc143: " << fsc143 << std::endl;
+        std::cout << "r_max: " << r_max << ", update_tau2_with_fsc: " << update_tau2_with_fsc << ", fsc143: " << fsc143 << std::endl;
         //l_r /= Fconv.getSize();
 
         RFLOAT tot_weights = 0.;
@@ -1353,27 +1354,27 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
         //resi_M /= MULTIDIM_SIZE(Mout);
         //
         //blurring fconv before inverse transform
-        std::cout << Fconv.zdim << std::endl;
+        std::cout << "Fconv: ";
         Fconv.printShape();
+        std::cout << "Fweight: ";
         Fweight.printShape();
-        RFLOAT B_factor = 2.;
-        FOR_ALL_ELEMENTS_IN_FFTW_TRANSFORM(Fweight)
- 		{
-			int r2 = kp * kp + ip * ip + jp * jp;
-			if (r2 < max_r2)
+        FOR_ALL_ELEMENTS_IN_FFTW_TRANSFORM(Fconv)
+        {
+            int r2 = kp * kp + ip * ip + jp * jp;
+            if (r2 < max_r2)
             {
                 //FFTW_ELEM(Fconv, kp, ip, jp) /= normfft;
                 //avg_Fweight += A3D_ELEM(Fweight, k, i, j)*A3D_ELEM(Fweight, k, i, j);
                 r2 /= (Fconv.zdim*Fconv.zdim);
                 RFLOAT bfactor = exp(-r2*4.*PI*PI*B_factor);
-                DIRECT_A3D_ELEM(Fconv, k, i, j) *= bfactor;
-                DIRECT_A3D_ELEM(Fweight, k, i, j) *= bfactor*bfactor;
-                avg_Fconv += abs(DIRECT_A3D_ELEM(Fconv, k, i, j));
-                avg_Fweight += abs(DIRECT_A3D_ELEM(Fweight, k, i, j));
+                FFTW_ELEM(Fconv, kp, ip, jp) *= bfactor;
+                FFTW_ELEM(Fweight, kp, ip, jp) *= bfactor*bfactor;
+                avg_Fconv += abs(FFTW_ELEM(Fconv, kp, ip, jp));
+                avg_Fweight += abs(FFTW_ELEM(Fweight, kp, ip, jp));
                 //counter += 1.;
             }
         }
-
+        
         Mout.setXmippOrigin();
         //std::cout << "Mout";
         //Mout.printShape();
@@ -1420,7 +1421,7 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
 
         if(devBundle){
             if(update_tau2_with_fsc)
-                cuda_lasso(fsc143, tv_iters, l_r, mu, tv_alpha, tv_beta, eps, Mout, Fweight, Ftest_conv, Ftest_weight, vol_out, (MlDeviceBundle*) devBundle, ref_dim, avg_Fweight, normalise, true, tv_weight, tv_epsp);
+                cuda_lasso(fsc143, tv_iters, l_r, mu, tv_alpha, tv_beta, eps, Mout, Fweight, Ftest_conv, Ftest_weight, vol_out, (MlDeviceBundle*) devBundle, ref_dim, avg_Fweight, normalise, true, tv_weight, tv_epsp, B_factor);
             else
                 cuda_lasso_nocv(fsc143, tv_iters, l_r, mu, tv_alpha, tv_beta, eps, Mout, Fweight, Fconv, vol_out, (MlDeviceBundle*) devBundle, ref_dim, avg_Fweight, normalise, true, tv_weight, tv_epsp);
         }

@@ -469,6 +469,7 @@ void MlOptimiser::parseContinue(int argc, char **argv)
     mymodel.tv_beta = textToFloat(parser.getOption("--tv_beta", "Regularisation parameter for Graph L2 terms", "0.1"));
     mymodel.tv_eps  = textToFloat(parser.getOption("--tv_eps", "eps value for l1 norm", "0.1"));
     mymodel.tv_epsp = textToFloat(parser.getOption("--tv_epsp", "eps value for tv norm", "0.1"));
+    mymodel.tv_b = textToFloat(parser.getOption("--tv_b", "bfactor blurring", "1."));
     adaptive_fraction = textToFloat(parser.getOption("--adaptive_fraction", "Fraction of the weights to be considered in the first pass of adaptive oversampling ", "0.999"));
     acceptance_ratio = textToDouble(parser.getOption("--acceptance_ratio", "The acceptance_ratio for sample random sampling", "1."));
     do_fast_subsets = parser.checkOption("--fast_subsets", "Use faster optimisation by using subsets of the data in the first 15 iterations");
@@ -516,6 +517,7 @@ void MlOptimiser::parseInitial(int argc, char **argv)
     mymodel.tv_beta = textToFloat(parser.getOption("--tv_beta", "Regularisation parameter for Graph L2 terms", "0.1"));
     mymodel.tv_eps  = textToFloat(parser.getOption("--tv_eps", "eps value for l1 norm", "0.1"));
     mymodel.tv_epsp = textToFloat(parser.getOption("--tv_epsp", "eps value for tv norm", "0.1"));
+    mymodel.tv_b = textToFloat(parser.getOption("--tv_b", "bfactor blurring", "1."));
 
 	mymodel.nr_classes = textToInteger(parser.getOption("--K", "Number of references to be refined", "1"));
     acceptance_ratio = textToDouble(parser.getOption("--acceptance_ratio", "The acceptance_ratio for sample random sampling", "1."));
@@ -2656,8 +2658,8 @@ void MlOptimiser::expectation()
 	updateImageSizeAndResolutionPointers();
     if(iter == 1) {
         //MOD: calculate total pdf and initialise digamma here at first iteration
-        mymodel.initialiseTotalPdf();
-        mymodel.initialiseDigammaVar(sampling.NrDirections(), float(coarse_size*coarse_size)/2., coarse_size);
+        //mymodel.initialiseTotalPdf();
+        //mymodel.initialiseDigammaVar(sampling.NrDirections(), float(coarse_size*coarse_size)/2., coarse_size);
     }
 
 	// B. Initialise Fouriertransform, set weights in wsum_model to zero, initialise AB-matrices for FFT-phase shifts, etc
@@ -4184,7 +4186,7 @@ void MlOptimiser::maximizationOtherParameters()
     for(int iclass = 0; iclass < mymodel.PPref.size(); iclass++){
         if(mymodel.ref_dim == 3){
             //mymodel.PPref[iclass].variance *= mu;
-            mymodel.PPref[iclass].variance = wsum_model.BPref[iclass].variance;
+            //mymodel.PPref[iclass].variance = wsum_model.BPref[iclass].variance;
         }
     }
 
@@ -8799,9 +8801,9 @@ void MlOptimiser::updateAngularSampling(bool myverb)
 				has_fine_enough_angular_sampling = true;
                 //MOD: if the sampling rate didn't change
                 //calculate the sum of pdf for each class
-                mymodel.initialiseTotalPdf();
+                //mymodel.initialiseTotalPdf();
                 //initialise the digamma
-                mymodel.initialiseDigammaVar(sampling.NrDirections(), float(mymodel.current_size*mymodel.current_size)/2., mymodel.current_size);
+                //mymodel.initialiseDigammaVar(sampling.NrDirections(), float(mymodel.current_size*mymodel.current_size)/2., mymodel.current_size);
                 //mymodel.calculateDigammaPDf();
 			}
 			else

@@ -68,7 +68,7 @@ public:
     bool do_tv;
 
     // learning rate graph restraint scale
-    RFLOAT l_r, tv_alpha, tv_beta, tv_weight, tv_eps, tv_epsp;
+    RFLOAT l_r, tv_alpha, tv_beta, tv_weight, tv_eps, tv_epsp, tv_b;
 
     // number of tv iterations
     int tv_iters;

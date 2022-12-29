@@ -777,8 +777,8 @@ void MlOptimiserMpi::expectation()
 
     if(!node->isMaster() && iter == 1) {
         //MOD: calculate total pdf and initialise digamma here at first iteration
-        mymodel.initialiseTotalPdf();
-        mymodel.initialiseDigammaVar(sampling.NrDirections(), coarse_size*coarse_size, coarse_size);
+        //mymodel.initialiseTotalPdf();
+        //mymodel.initialiseDigammaVar(sampling.NrDirections(), coarse_size*coarse_size, coarse_size);
         //mymodel.calculateDigammaPDf();
     }
 	// B. Set the PPref Fourier transforms, initialise wsum_model, etc.
@@ -2101,7 +2101,7 @@ void MlOptimiserMpi::maximization()
 								mymodel.tau2_fudge_factor, mymodel.tau2_class[ith_recons], mymodel.sigma2_class[ith_recons],
 								mymodel.data_vs_prior_class[ith_recons], mymodel.fourier_coverage_class[ith_recons],
 								mymodel.fsc_halves_class[ibody], wsum_model.pdf_class[iclass], mymodel.tv_iters, 
-								do_split_random_halves, (do_join_random_halves || do_always_join_random_halves), nr_threads, minres_map, &timer, mymodel.do_tv, mymodel.l_r, mymodel.tv_alpha, mymodel.tv_beta, mymodel.tv_weight, devBundle, mymodel.tv_eps, mymodel.tv_epsp);
+								do_split_random_halves, (do_join_random_halves || do_always_join_random_halves), nr_threads, minres_map, &timer, mymodel.do_tv, mymodel.l_r, mymodel.tv_alpha, mymodel.tv_beta, mymodel.tv_weight, devBundle, mymodel.tv_eps, mymodel.tv_epsp, mymodel.tv_b);
 
 						//(wsum_model.BPref[ith_recons]).reconstruct(mymodel.Iref[ith_recons], gridding_nr_iter, do_map,
 						//		mymodel.tau2_fudge_factor, mymodel.tau2_class[ith_recons], mymodel.sigma2_class[ith_recons],
@@ -2113,7 +2113,7 @@ void MlOptimiserMpi::maximization()
 								mymodel.tau2_fudge_factor, mymodel.tau2_class[ith_recons], mymodel.sigma2_class[ith_recons],
 								mymodel.data_vs_prior_class[ith_recons], mymodel.fourier_coverage_class[ith_recons],
 								mymodel.fsc_halves_class[ibody], wsum_model.pdf_class[iclass], mymodel.tv_iters, 
-								do_split_random_halves, (do_join_random_halves || do_always_join_random_halves), nr_threads, minres_map, false, mymodel.do_tv, mymodel.l_r, mymodel.tv_alpha, mymodel.tv_beta, mymodel.tv_weight, devBundle, mymodel.tv_eps, mymodel.tv_epsp);
+								do_split_random_halves, (do_join_random_halves || do_always_join_random_halves), nr_threads, minres_map, false, mymodel.do_tv, mymodel.l_r, mymodel.tv_alpha, mymodel.tv_beta, mymodel.tv_weight, devBundle, mymodel.tv_eps, mymodel.tv_epsp, mymodel.tv_b);
 
 						//(wsum_model.BPref[ith_recons]).reconstruct(mymodel.Iref[ith_recons], gridding_nr_iter, do_map,
 						//		mymodel.tau2_fudge_factor, mymodel.tau2_class[ith_recons], mymodel.sigma2_class[ith_recons],
@@ -2229,7 +2229,7 @@ void MlOptimiserMpi::maximization()
 									mymodel.tau2_fudge_factor, mymodel.tau2_class[ith_recons], mymodel.sigma2_class[ith_recons],
 									mymodel.data_vs_prior_class[ith_recons], mymodel.fourier_coverage_class[ith_recons],
 									mymodel.fsc_halves_class[ibody], wsum_model.pdf_class[iclass], mymodel.tv_iters, 
-									do_split_random_halves, do_join_random_halves, nr_threads, minres_map, false, mymodel.do_tv, mymodel.l_r, mymodel.tv_alpha, mymodel.tv_beta, mymodel.tv_weight, devBundle, mymodel.tv_eps, mymodel.tv_epsp);
+									do_split_random_halves, do_join_random_halves, nr_threads, minres_map, false, mymodel.do_tv, mymodel.l_r, mymodel.tv_alpha, mymodel.tv_beta, mymodel.tv_weight, devBundle, mymodel.tv_eps, mymodel.tv_epsp, mymodel.tv_b);
 
 
 							if (do_sgd)
@@ -2639,48 +2639,55 @@ void MlOptimiserMpi::exchangeTwoHalves()
 	RFLOAT myres = XMIPP_MAX(low_resol_join_halves, 1./mymodel.current_resolution);
 	int lowres_r_max = CEIL(mymodel.ori_size * mymodel.pixel_size / myres);
 
-	for (int iclass = 0; iclass < mymodel.nr_classes; iclass++ )
+    for (int iclass = 0; iclass< mymodel.nr_bodies; iclass++ )
+	//for (int iclass = 0; iclass < mymodel.nr_classes; iclass++ )
 	{
-		if (node->rank == 1 || node->rank == 2)
+        int reconstruct_rank1 = 2 * (iclass % ( (node->size - 1)/2 ) ) + 1;
+		int reconstruct_rank2 = 2 * (iclass % ( (node->size - 1)/2 ) ) + 2;
+        std::cout << "Exchanging random halves for body " << iclass << " using " << reconstruct_rank1 << " " << reconstruct_rank2 << std::endl;
+		if (node->rank == reconstruct_rank1 || node->rank == reconstruct_rank2)
 		{
 			MultidimArray<Complex > lowres_data;
 			MultidimArray<RFLOAT > lowres_weight;
 
             wsum_model.BPref[iclass].getTestDataAndWeight(lowres_data, lowres_weight);
-			if (node->rank == 2)
+			if (node->rank == reconstruct_rank2)
 			{
+                std::cout << " Exchange test data and weight ..." << node->rank << std::endl;
+
 				MPI_Status status;
 
 				// The second slave sends its lowres_data and lowres_weight to the first slave
-				node->relion_MPI_Send(MULTIDIM_ARRAY(lowres_data), 2*MULTIDIM_SIZE(lowres_data), MY_MPI_DOUBLE, 1, MPITAG_IMAGE, MPI_COMM_WORLD);
-				node->relion_MPI_Send(MULTIDIM_ARRAY(lowres_weight), MULTIDIM_SIZE(lowres_weight), MY_MPI_DOUBLE, 1, MPITAG_RFLOAT, MPI_COMM_WORLD);
+				node->relion_MPI_Send(MULTIDIM_ARRAY(lowres_data), 2*MULTIDIM_SIZE(lowres_data), MY_MPI_DOUBLE, reconstruct_rank1, MPITAG_IMAGE, MPI_COMM_WORLD);
+				node->relion_MPI_Send(MULTIDIM_ARRAY(lowres_weight), MULTIDIM_SIZE(lowres_weight), MY_MPI_DOUBLE, reconstruct_rank1, MPITAG_RFLOAT, MPI_COMM_WORLD);
 
 				// Now the first slave is calculating the average....
 
 				// Then the second slave receives the average back from the first slave
-				node->relion_MPI_Recv(MULTIDIM_ARRAY(lowres_data), 2*MULTIDIM_SIZE(lowres_data), MY_MPI_DOUBLE, 1, MPITAG_IMAGE, MPI_COMM_WORLD, status);
-				node->relion_MPI_Recv(MULTIDIM_ARRAY(lowres_weight), MULTIDIM_SIZE(lowres_weight), MY_MPI_DOUBLE, 1, MPITAG_RFLOAT, MPI_COMM_WORLD, status);
+				node->relion_MPI_Recv(MULTIDIM_ARRAY(lowres_data), 2*MULTIDIM_SIZE(lowres_data), MY_MPI_DOUBLE, reconstruct_rank1, MPITAG_IMAGE, MPI_COMM_WORLD, status);
+				node->relion_MPI_Recv(MULTIDIM_ARRAY(lowres_weight), MULTIDIM_SIZE(lowres_weight), MY_MPI_DOUBLE, reconstruct_rank1, MPITAG_RFLOAT, MPI_COMM_WORLD, status);
 			
                 // Now node 2 have the test data from node 1, set them back into the backprojector
 			    wsum_model.BPref[iclass].setTestDataAndWeight(lowres_data, lowres_weight);
 
 			}
-			else if (node->rank == 1)
+			else if (node->rank == reconstruct_rank1)
 			{
 
-				std::cout << " Exchange test data and weight ..." << std::endl;
+				std::cout << " Exchange test data and weight ..." << node->rank << std::endl;
 				MPI_Status status;
 				// The first slave receives the average from the second slave
-				node->relion_MPI_Recv(MULTIDIM_ARRAY(lowres_data), 2*MULTIDIM_SIZE(lowres_data), MY_MPI_DOUBLE, 2, MPITAG_IMAGE, MPI_COMM_WORLD, status);
-				node->relion_MPI_Recv(MULTIDIM_ARRAY(lowres_weight), MULTIDIM_SIZE(lowres_weight), MY_MPI_DOUBLE, 2, MPITAG_RFLOAT, MPI_COMM_WORLD, status);
+                MultidimArray<Complex > lowres_data1;
+			    MultidimArray<RFLOAT > lowres_weight1;
+                wsum_model.BPref[iclass].getTestDataAndWeight(lowres_data1, lowres_weight1);
+				node->relion_MPI_Recv(MULTIDIM_ARRAY(lowres_data1), 2*MULTIDIM_SIZE(lowres_data1), MY_MPI_DOUBLE, reconstruct_rank2, MPITAG_IMAGE, MPI_COMM_WORLD, status);
+				node->relion_MPI_Recv(MULTIDIM_ARRAY(lowres_weight1), MULTIDIM_SIZE(lowres_weight1), MY_MPI_DOUBLE, reconstruct_rank2, MPITAG_RFLOAT, MPI_COMM_WORLD, status);
                 //after recieve test data from node 2, set test data for node 1
-                wsum_model.BPref[iclass].setTestDataAndWeight(lowres_data, lowres_weight);
+                wsum_model.BPref[iclass].setTestDataAndWeight(lowres_data1, lowres_weight1);
 
-                //get test data for node 1
-                wsum_model.BPref[iclass].getTestDataAndWeight(lowres_data, lowres_weight);
 				// The first slave sends the lowres_data and lowres_weight also back to the second slave
-				node->relion_MPI_Send(MULTIDIM_ARRAY(lowres_data), 2*MULTIDIM_SIZE(lowres_data), MY_MPI_DOUBLE, 2, MPITAG_IMAGE, MPI_COMM_WORLD);
-				node->relion_MPI_Send(MULTIDIM_ARRAY(lowres_weight), MULTIDIM_SIZE(lowres_weight), MY_MPI_DOUBLE, 2, MPITAG_RFLOAT, MPI_COMM_WORLD);
+				node->relion_MPI_Send(MULTIDIM_ARRAY(lowres_data), 2*MULTIDIM_SIZE(lowres_data), MY_MPI_DOUBLE, reconstruct_rank2, MPITAG_IMAGE, MPI_COMM_WORLD);
+				node->relion_MPI_Send(MULTIDIM_ARRAY(lowres_weight), MULTIDIM_SIZE(lowres_weight), MY_MPI_DOUBLE, reconstruct_rank2, MPITAG_RFLOAT, MPI_COMM_WORLD);
 
 			}
 

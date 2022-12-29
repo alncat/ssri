@@ -324,7 +324,8 @@ public:
                      RFLOAT tv_weight = 1,
                      void* devBundle = NULL,
                      RFLOAT tv_eps = 0.01,
-                     RFLOAT tv_epsp = 0.01);
+                     RFLOAT tv_epsp = 0.01,
+                     RFLOAT tv_b = 2.);
 
 	/*  Enforce Hermitian symmetry, apply helical symmetry as well as point-group symmetry
 	 */
