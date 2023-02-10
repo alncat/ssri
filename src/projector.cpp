@@ -275,8 +275,8 @@ void Projector::computeFourierTransformMap(MultidimArray<RFLOAT> &vol_in, Multid
         }
     }
     old_variance.clear();
-    if(power_spectrum_avg != 0)
-        std::cout << "variance set to " << power_spectrum_avg << "!!!"<< std::endl;
+    //if(power_spectrum_avg != 0)
+    //    std::cout << "variance set to " << power_spectrum_avg << "!!!"<< std::endl;
 	TIMING_TOC(TIMING_POW);
 
 	TIMING_TOC(TIMING_TOP);

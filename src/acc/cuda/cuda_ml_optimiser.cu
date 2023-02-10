@@ -122,7 +122,7 @@ void MlDeviceBundle::setupFixedSizedObjects()
 				baseMLO->mymodel.PPref[imodel].padding_factor);
 
         //enable 3D variance
-		projectors[imodel].initMdl(baseMLO->mymodel.PPref[imodel].data.data, baseMLO->mymodel.PPref[imodel].variance.data);
+		projectors[imodel].initMdl(baseMLO->mymodel.PPref[imodel].data.data);//, baseMLO->mymodel.PPref[imodel].variance.data);
 
 	}
 

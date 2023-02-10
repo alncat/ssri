@@ -4566,7 +4566,7 @@ void MlOptimiser::updateImageSizeAndResolutionPointers()
     //
 	int maxres = mymodel.getPixelFromResolution(mymodel.current_resolution);
     std::cout << "maxres before increasing: " << maxres << ", has_high_fsc_at_limit: " << has_high_fsc_at_limit << ", current_size: " << mymodel.current_size << std::endl;
-    mymodel.fsc_halves_class[0].printShape();
+    //mymodel.fsc_halves_class[0].printShape();
 	if (mymodel.ave_Pmax > 0.1 && has_high_fsc_at_limit)
     {
 		maxres += ROUND(0.25 * mymodel.ori_size / 2);

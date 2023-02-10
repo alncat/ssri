@@ -84,7 +84,7 @@ public:
 				mdlInitY(mdlInitY), mdlInitZ(mdlInitZ),
 				padding_factor(padding_factor),
 				maxR(maxR), maxR2(maxR*maxR),
-				mdlReal(mdlReal), mdlImag(mdlImag), mdlVar(mdlVar)
+				mdlReal(mdlReal), mdlImag(mdlImag) , mdlVar(mdlVar)
 			{
 #ifndef CUDA		
 				std::complex<XFLOAT> *pData = mdlComplex;
@@ -477,13 +477,13 @@ public:
 					maxR,
 #ifndef PROJECTOR_NO_TEXTURES
 					*p.mdlReal,
-					*p.mdlImag,
-                    *p.mdlVar
+					*p.mdlImag
+                    //*p.mdlVar
 #else
 #ifdef CUDA
 					p.mdlReal,
-					p.mdlImag,
-                    p.mdlVar
+					p.mdlImag
+                    //p.mdlVar
 #else
 					p.mdlComplex
 #endif

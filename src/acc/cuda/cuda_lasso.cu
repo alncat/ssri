@@ -205,10 +205,10 @@ void cuda_lasso(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_alpha
         //eps = 0.05/(eps_i+1);
         tv_alpha = alpha/(eps_i + 1.)*fconv_norm*eps; //(1. - float(eps_i)/2.)*sqrt(normalise);//fconv_norm*eps/3;
         for(int beta_i = 0; beta_i < 4; beta_i++){
-            tv_beta = beta*(1. - float(beta_i)/5.)*fconv_norm*tv_log_eps;//*sqrt(normalise);//fconv_norm*eps/3;
+            tv_beta = beta*(float(beta_i+1)/5.)*fconv_norm*tv_log_eps;//*sqrt(normalise);//fconv_norm*eps/3;
             w = tv_alpha;
             for(int m_c = 0; m_c <= tv_iters; m_c++){
-                //forward transform img/momentum
+                //forward transform img
                 transformer.forward();
                 //multiply with weight and normalization factor
                 //cuda_kernel_complex_multi<<<FBsize, BLOCK_SIZE, 0, transformer.fouriers.getStream()>>>(
@@ -257,7 +257,6 @@ void cuda_lasso(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_alpha
                     //work on windowed grads
                     cuda_kernel_graph_grad<<<imgBFsize, BLOCK_SIZE, 0, grads.getStream()>>>(
                             ~img,
-                            //~momentum,
                             ~grads,
                             Z,
                             Y,
@@ -359,7 +358,7 @@ void cuda_lasso(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_alpha
     cuda_kernel_bfactor<<<FBsize, BLOCK_SIZE, 0, transformer.fouriers.getStream()>>>(
                         (XFLOAT*)~transformer.fouriers,
                         scale,
-                        bfactor,
+                        -bfactor*2.,
                         Z,
                         Y,
                         X/2 + 1,
@@ -386,7 +385,7 @@ void cuda_lasso(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_alpha
 }
 
 void cuda_lasso_nocv(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_alpha, RFLOAT tv_beta, RFLOAT eps, MultidimArray<RFLOAT> &Fconv,
-        MultidimArray<RFLOAT> &Fweight, MultidimArray<Complex> &Fdata, MultidimArray<RFLOAT> &vol_out, MlDeviceBundle *devBundle, int data_dim, RFLOAT normalise, RFLOAT nrparts, bool do_nag, RFLOAT implicit_weight, RFLOAT epsp){
+        MultidimArray<RFLOAT> &Fweight, MultidimArray<Complex> &Fdata, MultidimArray<RFLOAT> &vol_out, MlDeviceBundle *devBundle, int data_dim, RFLOAT normalise, RFLOAT nrparts, bool do_nag, RFLOAT implicit_weight, RFLOAT epsp, RFLOAT bfactor){
     cudaSetDevice(devBundle->device_id);
     devBundle->setStream();
     //tv_alpha = l_r*tv_alpha;
@@ -732,19 +731,33 @@ void cuda_lasso_nocv(int fsc143, int tv_iters, RFLOAT l_r, RFLOAT mu, RFLOAT tv_
     //print best beta
     //set img before fourier transform
     std::cout << "eps: " << best_eps << " tv_alpha: " << tv_alpha << " tv_beta: " << best_beta << " min_err: " << sqrt(min_err) << std::endl;
+    
+    transformer.forward();
+    transformer.fouriers.streamSync();
+    cuda_kernel_bfactor<<<FBsize, BLOCK_SIZE, 0, transformer.fouriers.getStream()>>>(
+                        (XFLOAT*)~transformer.fouriers,
+                        scale,
+                        bfactor,
+                        Z,
+                        Y,
+                        X/2 + 1,
+                        transformer.fouriers.getSize());
+    transformer.backward();
+
+
     //now copy image to host
     //now set vol_out and wait for stream to complete
     img.streamSync();
     bool hasnan = false;
     for(int i = 0; i < img_size; i++){
-        if(isnan(best_img.data[i])){
+        if(isnan(img[i])){
             vol_out.data[i] = 0.;
             hasnan = true;
         }
         else
         {
             //consider upscale image
-            vol_out.data[i] = best_img.data[i];
+            vol_out.data[i] = img[i];
         }
     }
     if(hasnan) std::cout << "WARNING: find nan in reconstruction." << std::endl;

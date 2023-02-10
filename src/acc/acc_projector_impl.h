@@ -36,7 +36,7 @@ bool AccProjector::setMdlDim(
 
 	mdlReal = new cudaTextureObject_t();
 	mdlImag = new cudaTextureObject_t();
-    mdlVar  = new cudaTextureObject_t();
+    //mdlVar  = new cudaTextureObject_t();
 
 	// create channel to describe data type (bits,bits,bits,bits,type)
 	cudaChannelFormatDesc desc;
@@ -107,13 +107,13 @@ bool AccProjector::setMdlDim(
 	HANDLE_ERROR(cudaCreateTextureObject(mdlReal, &resDesc_real, &texDesc, NULL));
 	HANDLE_ERROR(cudaCreateTextureObject(mdlImag, &resDesc_imag, &texDesc, NULL));
     //MOD: create variance object if it is a 3D model
-    if(mdlZ != 0) HANDLE_ERROR(cudaCreateTextureObject(mdlVar, &resDesc_var, &texDesc, NULL));
+    //if(mdlZ != 0) HANDLE_ERROR(cudaCreateTextureObject(mdlVar, &resDesc_var, &texDesc, NULL));
 
 #else
 #ifdef CUDA
 	DEBUG_HANDLE_ERROR(cudaMalloc( (void**) &mdlReal, mdlXYZ * sizeof(XFLOAT)));
 	DEBUG_HANDLE_ERROR(cudaMalloc( (void**) &mdlImag, mdlXYZ * sizeof(XFLOAT)));
-    if(mdlZ != 0) DEBUG_HANDLE_ERROR(cudaMalloc( (void**) &mdlVar, mdlXYZ * sizeof(XFLOAT)));
+    //if(mdlZ != 0) DEBUG_HANDLE_ERROR(cudaMalloc( (void**) &mdlVar, mdlXYZ * sizeof(XFLOAT)));
 #else
 	mdlComplex = NULL;
 #endif
@@ -231,7 +231,7 @@ void AccProjector::initMdl(XFLOAT *real, XFLOAT *imag, XFLOAT *var)
 #ifdef CUDA
 	DEBUG_HANDLE_ERROR(cudaMemcpy( mdlReal, real, mdlXYZ * sizeof(XFLOAT), cudaMemcpyHostToDevice));
 	DEBUG_HANDLE_ERROR(cudaMemcpy( mdlImag, imag, mdlXYZ * sizeof(XFLOAT), cudaMemcpyHostToDevice));
-    DEBUG_HANDLE_ERROR(cudaMemcpy( mdlVar,  var, mdlXYZ * sizeof(XFLOAT), cudaMemcpyHostToDevice));
+    //DEBUG_HANDLE_ERROR(cudaMemcpy( mdlVar,  var, mdlXYZ * sizeof(XFLOAT), cudaMemcpyHostToDevice));
 #else
 	std::complex<XFLOAT> *pData = mdlComplex;
     for(size_t i=0; i<mdlXYZ; i++) {
@@ -313,10 +313,10 @@ void AccProjector::clear()
 #ifndef PROJECTOR_NO_TEXTURES
 		cudaDestroyTextureObject(*mdlReal);
 		cudaDestroyTextureObject(*mdlImag);
-        cudaDestroyTextureObject(*mdlVar);
+        //cudaDestroyTextureObject(*mdlVar);
 		delete mdlReal;
 		delete mdlImag;
-        delete mdlVar;
+        //delete mdlVar;
 
 		if(mdlZ!=0) //3D case
 		{
@@ -339,11 +339,11 @@ void AccProjector::clear()
 #else
 		cudaFree(mdlReal);
 		cudaFree(mdlImag);
-        cudaFree(mdlVar);
+        //cudaFree(mdlVar);
 #endif
 		mdlReal = 0;
 		mdlImag = 0;
-        mdlVar  = 0;
+        //mdlVar  = 0;
 	}
 #else // ifdef CUDA
 	if ((mdlComplex != NULL) && (externalFree == 0))

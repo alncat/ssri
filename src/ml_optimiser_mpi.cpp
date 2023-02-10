@@ -1470,25 +1470,25 @@ void MlOptimiserMpi::expectation()
 						XFLOAT *reals = new XFLOAT[s];
 						XFLOAT *imags = new XFLOAT[s];
 						XFLOAT *weights = new XFLOAT[s];
-                        XFLOAT *variance = new XFLOAT[s];
-                        XFLOAT *weight_norm = new XFLOAT[s];
+                        //XFLOAT *variance = new XFLOAT[s];
+                        //XFLOAT *weight_norm = new XFLOAT[s];
 
-						b->backprojectors[j].getMdlData(reals, imags, weights, variance, weight_norm);
+						b->backprojectors[j].getMdlData(reals, imags, weights);//, variance, weight_norm);
 
 						for (unsigned long n = 0; n < s; n++)
 						{
 							wsum_model.BPref[j].data.data[n].real += (RFLOAT) reals[n];
 							wsum_model.BPref[j].data.data[n].imag += (RFLOAT) imags[n];
 							wsum_model.BPref[j].weight.data[n] += (RFLOAT) weights[n];
-                            wsum_model.BPref[j].variance.data[n] += (RFLOAT) variance[n];
-                            wsum_model.BPref[j].weight_norm.data[n] += (RFLOAT) weight_norm[n];
+                            //wsum_model.BPref[j].variance.data[n] += (RFLOAT) variance[n];
+                            //wsum_model.BPref[j].weight_norm.data[n] += (RFLOAT) weight_norm[n];
 						}
 
 						delete [] reals;
 						delete [] imags;
 						delete [] weights;
-                        delete [] variance;
-                        delete [] weight_norm;
+                        //delete [] variance;
+                        //delete [] weight_norm;
 
 						b->projectors[j].clear();
 						b->backprojectors[j].clear();

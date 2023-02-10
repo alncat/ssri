@@ -36,8 +36,8 @@ size_t AccBackprojector::setMdlDim(
 		HANDLE_ERROR(cudaMalloc( (void**) &d_mdlReal,   mdlXYZ * sizeof(XFLOAT)));
 		HANDLE_ERROR(cudaMalloc( (void**) &d_mdlImag,   mdlXYZ * sizeof(XFLOAT)));
 		HANDLE_ERROR(cudaMalloc( (void**) &d_mdlWeight, mdlXYZ * sizeof(XFLOAT)));
-        HANDLE_ERROR(cudaMalloc( (void**) &d_mdlVar, mdlXYZ * sizeof(XFLOAT)));
-        HANDLE_ERROR(cudaMalloc( (void**) &d_mdlWeightNorm, mdlXYZ * sizeof(XFLOAT)));
+        //HANDLE_ERROR(cudaMalloc( (void**) &d_mdlVar, mdlXYZ * sizeof(XFLOAT)));
+        //HANDLE_ERROR(cudaMalloc( (void**) &d_mdlWeightNorm, mdlXYZ * sizeof(XFLOAT)));
 #else
 		if (posix_memalign((void **)&d_mdlReal,   MEM_ALIGN, mdlXYZ * sizeof(XFLOAT))) CRITICAL(RAMERR);
 		if (posix_memalign((void **)&d_mdlImag,   MEM_ALIGN, mdlXYZ * sizeof(XFLOAT))) CRITICAL(RAMERR);
@@ -73,8 +73,8 @@ void AccBackprojector::initMdl()
 	DEBUG_HANDLE_ERROR(cudaMemset( d_mdlReal,   0, mdlXYZ * sizeof(XFLOAT)));
 	DEBUG_HANDLE_ERROR(cudaMemset( d_mdlImag,   0, mdlXYZ * sizeof(XFLOAT)));
 	DEBUG_HANDLE_ERROR(cudaMemset( d_mdlWeight, 0, mdlXYZ * sizeof(XFLOAT)));
-    DEBUG_HANDLE_ERROR(cudaMemset( d_mdlVar, 0, mdlXYZ * sizeof(XFLOAT)));
-    DEBUG_HANDLE_ERROR(cudaMemset( d_mdlWeightNorm, 0, mdlXYZ * sizeof(XFLOAT)));
+    //DEBUG_HANDLE_ERROR(cudaMemset( d_mdlVar, 0, mdlXYZ * sizeof(XFLOAT)));
+    //DEBUG_HANDLE_ERROR(cudaMemset( d_mdlWeightNorm, 0, mdlXYZ * sizeof(XFLOAT)));
 #else
 	memset(d_mdlReal,     0, mdlXYZ * sizeof(XFLOAT));
 	memset(d_mdlImag,     0, mdlXYZ * sizeof(XFLOAT));
@@ -110,8 +110,8 @@ void AccBackprojector::getMdlData(XFLOAT *r, XFLOAT *i, XFLOAT * w, XFLOAT * var
 	DEBUG_HANDLE_ERROR(cudaMemcpyAsync( r, d_mdlReal,   mdlXYZ * sizeof(XFLOAT), cudaMemcpyDeviceToHost, stream));
 	DEBUG_HANDLE_ERROR(cudaMemcpyAsync( i, d_mdlImag,   mdlXYZ * sizeof(XFLOAT), cudaMemcpyDeviceToHost, stream));
 	DEBUG_HANDLE_ERROR(cudaMemcpyAsync( w, d_mdlWeight, mdlXYZ * sizeof(XFLOAT), cudaMemcpyDeviceToHost, stream));
-    DEBUG_HANDLE_ERROR(cudaMemcpyAsync( var, d_mdlVar, mdlXYZ * sizeof(XFLOAT), cudaMemcpyDeviceToHost, stream));
-    DEBUG_HANDLE_ERROR(cudaMemcpyAsync( weight_norm, d_mdlWeightNorm, mdlXYZ * sizeof(XFLOAT), cudaMemcpyDeviceToHost, stream));
+    //DEBUG_HANDLE_ERROR(cudaMemcpyAsync( var, d_mdlVar, mdlXYZ * sizeof(XFLOAT), cudaMemcpyDeviceToHost, stream));
+    //DEBUG_HANDLE_ERROR(cudaMemcpyAsync( weight_norm, d_mdlWeightNorm, mdlXYZ * sizeof(XFLOAT), cudaMemcpyDeviceToHost, stream));
 	DEBUG_HANDLE_ERROR(cudaStreamSynchronize(stream)); //Wait for copy
 #else
 	memcpy(r, d_mdlReal,   mdlXYZ * sizeof(XFLOAT));
@@ -148,8 +148,8 @@ void AccBackprojector::clear()
 		DEBUG_HANDLE_ERROR(cudaFree(d_mdlReal));
 		DEBUG_HANDLE_ERROR(cudaFree(d_mdlImag));
 		DEBUG_HANDLE_ERROR(cudaFree(d_mdlWeight));
-        DEBUG_HANDLE_ERROR(cudaFree(d_mdlVar));
-        DEBUG_HANDLE_ERROR(cudaFree(d_mdlWeightNorm));
+        //DEBUG_HANDLE_ERROR(cudaFree(d_mdlVar));
+        //DEBUG_HANDLE_ERROR(cudaFree(d_mdlWeightNorm));
 #else
 		free(d_mdlReal);
 		free(d_mdlImag);

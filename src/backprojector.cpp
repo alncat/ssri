@@ -1039,19 +1039,19 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
 	int max_r2 = ROUND(r_max * padding_factor) * ROUND(r_max * padding_factor);
     //divide data by 3d variance before reconstruction
     if(ref_dim == 3){
-        FOR_ALL_ELEMENTS_IN_ARRAY3D(variance)
-        {
-            int r2 = k*k + i*i + j*j;
-            if(r2 <= max_r2) {
-                //prevent extremly small weight
-                A3D_ELEM(weight_norm, k, i, j) = std::max(A3D_ELEM(weight_norm, k, i, j), 1e-5);
-                //get inverse variance
-                A3D_ELEM(variance, k, i, j) /= A3D_ELEM(weight_norm, k, i, j);
-                A3D_ELEM(variance, k, i, j) = 1./std::max(A3D_ELEM(variance, k, i, j), 1e-6);
-                //A3D_ELEM(weight, k, i, j) *= A3D_ELEM(variance, k, i, j);
-                //A3D_ELEM(data, k, i, j) *= A3D_ELEM(variance, k, i, j);
-            }
-        }
+        //FOR_ALL_ELEMENTS_IN_ARRAY3D(variance)
+        //{
+        //    int r2 = k*k + i*i + j*j;
+        //    if(r2 <= max_r2) {
+        //        //prevent extremly small weight
+        //        A3D_ELEM(weight_norm, k, i, j) = std::max(A3D_ELEM(weight_norm, k, i, j), 1e-5);
+        //        //get inverse variance
+        //        A3D_ELEM(variance, k, i, j) /= A3D_ELEM(weight_norm, k, i, j);
+        //        A3D_ELEM(variance, k, i, j) = 1./std::max(A3D_ELEM(variance, k, i, j), 1e-6);
+        //        //A3D_ELEM(weight, k, i, j) *= A3D_ELEM(variance, k, i, j);
+        //        //A3D_ELEM(data, k, i, j) *= A3D_ELEM(variance, k, i, j);
+        //    }
+        //}
     }
 
 //#define DEBUG_RECONSTRUCT
@@ -1152,6 +1152,7 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
 			std::cerr << " DIRECT_A1D_ELEM(sigma2, i)= " << DIRECT_A1D_ELEM(sigma2, i) << std::endl;
 			REPORT_ERROR("BackProjector::reconstruct: ERROR: unexpectedly small, yet non-zero sigma2 value, this should not happen...a");
 		}
+        //std::cout << DIRECT_A1D_ELEM(sigma2, i) << std::endl;
 	}
 
     RFLOAT ssnr = 0.;
@@ -1368,7 +1369,7 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
                 r2 /= (Fconv.zdim*Fconv.zdim);
                 RFLOAT bfactor = exp(-r2*4.*PI*PI*B_factor);
                 FFTW_ELEM(Fconv, kp, ip, jp) *= bfactor;
-                FFTW_ELEM(Fweight, kp, ip, jp) *= bfactor*bfactor;
+                //FFTW_ELEM(Fweight, kp, ip, jp) *= bfactor;//*bfactor;
                 avg_Fconv += abs(FFTW_ELEM(Fconv, kp, ip, jp));
                 avg_Fweight += abs(FFTW_ELEM(Fweight, kp, ip, jp));
                 //counter += 1.;
@@ -1423,7 +1424,7 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
             if(update_tau2_with_fsc)
                 cuda_lasso(fsc143, tv_iters, l_r, mu, tv_alpha, tv_beta, eps, Mout, Fweight, Ftest_conv, Ftest_weight, vol_out, (MlDeviceBundle*) devBundle, ref_dim, avg_Fweight, normalise, true, tv_weight, tv_epsp, B_factor);
             else
-                cuda_lasso_nocv(fsc143, tv_iters, l_r, mu, tv_alpha, tv_beta, eps, Mout, Fweight, Fconv, vol_out, (MlDeviceBundle*) devBundle, ref_dim, avg_Fweight, normalise, true, tv_weight, tv_epsp);
+                cuda_lasso_nocv(fsc143, tv_iters, l_r, mu, tv_alpha, tv_beta, eps, Mout, Fweight, Fconv, vol_out, (MlDeviceBundle*) devBundle, ref_dim, avg_Fweight, normalise, true, tv_weight, tv_epsp, B_factor);
         }
         //window map
         CenterFFT(vol_out,true);
@@ -1501,6 +1502,10 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
     }
     else if (do_map)
 	{
+        Fconv.initZeros(); // to remove any stuff from the input volume
+		decenter(data, Fconv, max_r2);
+        Fconv.printShape();
+        Fweight.printShape();
 
     	// Then, add the inverse of tau2-spectrum values to the weight
 		// and also calculate spherical average of data_vs_prior ratios
@@ -1514,7 +1519,7 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
 			if (r2 < max_r2)
 			{
 				int ires = ROUND( sqrt((RFLOAT)r2) / padding_factor );
-				RFLOAT invw = DIRECT_A3D_ELEM(Fweight, k, i, j);
+				RFLOAT invw = FFTW_ELEM(Fweight, kp, ip, jp);//DIRECT_A3D_ELEM(Fweight, k, i, j);
 
 				RFLOAT invtau2;
 				if (DIRECT_A1D_ELEM(tau2, ires) > 0.)
@@ -1534,10 +1539,11 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
 					std::cerr << " tau2= " << tau2 << std::endl;
 					REPORT_ERROR("ERROR BackProjector::reconstruct: Negative or zero values encountered for tau2 spectrum!");
 				}
+                //invtau2 = norm(FFTW_ELEM(Fconv, kp, ip, jp))/(invw*invw+1e-5);
 
 				// Keep track of spectral evidence-to-prior ratio and remaining noise in the reconstruction
 				if (!update_tau2_with_fsc)
-					DIRECT_A1D_ELEM(data_vs_prior, ires) += invw / invtau2;
+					DIRECT_A1D_ELEM(data_vs_prior, ires) += invw/invtau2; //invw / invtau2;
 
 				// Keep track of the coverage in Fourier space
 				if (invw / invtau2 >= 1.)
@@ -1549,7 +1555,7 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
 				if (ires >= minres_map)
 				{
 					// Now add the inverse-of-tau2_class term
-					invw += invtau2;
+					invw += invtau2;//invw/tau2_fudge;
 					// Store the new weight again in Fweight
 					DIRECT_A3D_ELEM(Fweight, k, i, j) = invw;
 				}
@@ -1567,6 +1573,8 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
 					DIRECT_A1D_ELEM(data_vs_prior, i) = 999.;
 				else
 					DIRECT_A1D_ELEM(data_vs_prior, i) /= DIRECT_A1D_ELEM(counter, i);
+                //if (i != 0) DIRECT_A1D_ELEM(data_vs_prior, i) /= DIRECT_A1D_ELEM(data_vs_prior, 0)/tau2_fudge;
+                //std::cout << DIRECT_A1D_ELEM(data_vs_prior, i) << std::endl;
 			}
 		}
 
@@ -1584,8 +1592,8 @@ void BackProjector::reconstruct(MultidimArray<RFLOAT> &vol_out,
 	{
 	    RCTIC(ReconTimer,ReconS_3);
 		std::cerr << "Skipping gridding!" << std::endl;
-		Fconv.initZeros(); // to remove any stuff from the input volume
-		decenter(data, Fconv, max_r2);
+		//Fconv.initZeros(); // to remove any stuff from the input volume
+		//decenter(data, Fconv, max_r2);
 
 		FOR_ALL_DIRECT_ELEMENTS_IN_MULTIDIMARRAY(Fconv)
 		{
